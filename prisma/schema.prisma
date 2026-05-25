@@ -1,0 +1,436 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Property {
+  id                      String    @id @default(cuid())
+  name                    String
+  propertyType            String
+  address                 String?
+  acquiredDate            DateTime?
+  acquisitionPriceYen     Int?
+  landPriceYen            Int?
+  buildingPriceYen        Int?
+  structure               String?
+  builtYearMonth          String?
+  totalUnits              Int
+  managementType          String    @default("自主管理")
+  managementCompanyName   String?
+  managementCompanyContact String?
+  fixedAssetTaxMemo       String?
+  fireInsuranceMemo       String?
+  status                  String    @default("保有中")
+  memo                    String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  archivedAt              DateTime?
+  units                   Unit[]
+  contracts               Contract[]
+  expenses                Expense[]
+  repairs                 Repair[]
+  loans                   Loan[]
+  documents               Document[]
+}
+
+model Unit {
+  id                 String    @id @default(cuid())
+  propertyId         String
+  roomNumber         String
+  layout             String?
+  areaSqm            String?
+  usage              String?
+  expectedRentYen    Int      @default(0)
+  currentRentYen     Int      @default(0)
+  commonFeeYen       Int      @default(0)
+  parkingFeeYen      Int      @default(0)
+  otherMonthlyFeeYen Int      @default(0)
+  status             String   @default("空室")
+  vacantSince        DateTime?
+  listingStartedAt   DateTime?
+  listingRentYen     Int?
+  viewingCount       Int      @default(0)
+  applicationCount   Int      @default(0)
+  memo               String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  archivedAt         DateTime?
+  property           Property @relation(fields: [propertyId], references: [id])
+  contracts          Contract[]
+  expenses           Expense[]
+  repairs            Repair[]
+  documents          Document[]
+
+  @@unique([propertyId, roomNumber])
+}
+
+model Tenant {
+  id                       String    @id @default(cuid())
+  displayName              String
+  kanaName                 String?
+  tenantType               String    @default("個人")
+  phone                    String?
+  email                    String?
+  emergencyContact         String?
+  bankTransferName         String?
+  guaranteeCompany         String?
+  guaranteeContractNumber  String?
+  status                   String    @default("入居中")
+  memo                     String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  archivedAt               DateTime?
+  contracts                Contract[]
+}
+
+model Contract {
+  id                         String    @id @default(cuid())
+  propertyId                 String
+  unitId                     String
+  tenantId                   String
+  startDate                  DateTime
+  endDate                    DateTime?
+  renewalDate                DateTime?
+  cancellationPlannedDate    DateTime?
+  moveOutDate                DateTime?
+  rentYen                    Int
+  commonFeeYen               Int       @default(0)
+  managementFeeYen           Int       @default(0)
+  parkingFeeYen              Int       @default(0)
+  otherMonthlyFeeYen         Int       @default(0)
+  securityDepositYen         Int       @default(0)
+  keyMoneyYen                Int       @default(0)
+  guaranteeDepositYen        Int       @default(0)
+  renewalFeeYen              Int       @default(0)
+  renewalAdminFeeYen         Int       @default(0)
+  paymentDueDay              Int       @default(27)
+  paymentMethod              String    @default("振込")
+  status                     String    @default("契約中")
+  fireInsuranceExpiresAt     DateTime?
+  guaranteeCompanyRenewalAt  DateTime?
+  memo                       String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  archivedAt                 DateTime?
+  property                   Property  @relation(fields: [propertyId], references: [id])
+  unit                       Unit      @relation(fields: [unitId], references: [id])
+  tenant                     Tenant    @relation(fields: [tenantId], references: [id])
+  monthlyCharges             MonthlyCharge[]
+  spotCharges                SpotCharge[]
+  allocations                Allocation[]
+  depositTransactions        DepositTransaction[]
+  documents                  Document[]
+}
+
+model MonthlyCharge {
+  id                   String    @id @default(cuid())
+  targetMonth           String
+  contractId            String
+  rentYen               Int
+  commonFeeYen          Int       @default(0)
+  managementFeeYen      Int       @default(0)
+  parkingFeeYen         Int       @default(0)
+  otherMonthlyFeeYen    Int       @default(0)
+  spotChargeTotalYen    Int       @default(0)
+  carriedOverDueYen     Int       @default(0)
+  advanceAppliedYen     Int       @default(0)
+  totalBilledYen        Int
+  paidYen               Int       @default(0)
+  unpaidYen             Int
+  status                String    @default("請求済")
+  dueDate               DateTime?
+  fixedAt               DateTime?
+  canceledAt            DateTime?
+  memo                  String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  archivedAt            DateTime?
+  contract              Contract  @relation(fields: [contractId], references: [id])
+  allocations           Allocation[]
+  spotCharges           SpotCharge[]
+
+  @@unique([targetMonth, contractId])
+}
+
+model SpotCharge {
+  id              String    @id @default(cuid())
+  contractId      String
+  monthlyChargeId String?
+  billedAt        DateTime
+  dueDate         DateTime?
+  chargeType      String
+  description     String
+  amountYen       Int
+  taxType         String    @default("対象外")
+  status          String    @default("請求済")
+  paidStatus      String    @default("未入金")
+  memo            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  archivedAt      DateTime?
+  contract        Contract  @relation(fields: [contractId], references: [id])
+  monthlyCharge   MonthlyCharge? @relation(fields: [monthlyChargeId], references: [id])
+  documents       Document[]
+}
+
+model Payment {
+  id                 String    @id @default(cuid())
+  paidAt             DateTime
+  amountYen          Int
+  payerName          String
+  description        String?
+  bankAccount        String?
+  source             String    @default("手動登録")
+  status             String    @default("未消込")
+  duplicateKey       String?
+  memo               String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  archivedAt         DateTime?
+  allocations        Allocation[]
+
+  @@index([paidAt, amountYen, payerName])
+}
+
+model Allocation {
+  id              String    @id @default(cuid())
+  paymentId       String
+  monthlyChargeId String?
+  spotChargeId    String?
+  contractId      String?
+  amountYen       Int
+  status          String    @default("有効")
+  allocatedAt     DateTime  @default(now())
+  canceledAt      DateTime?
+  memo            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  archivedAt      DateTime?
+  payment         Payment   @relation(fields: [paymentId], references: [id])
+  monthlyCharge   MonthlyCharge? @relation(fields: [monthlyChargeId], references: [id])
+  contract        Contract? @relation(fields: [contractId], references: [id])
+}
+
+model DepositTransaction {
+  id               String    @id @default(cuid())
+  contractId       String
+  transactedAt     DateTime
+  depositType      String
+  transactionType  String
+  amountYen        Int
+  description      String
+  relatedChargeId  String?
+  relatedExpenseId String?
+  balanceAfterYen  Int
+  status           String    @default("有効")
+  memo             String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  archivedAt       DateTime?
+  contract         Contract  @relation(fields: [contractId], references: [id])
+  documents        Document[]
+}
+
+model Expense {
+  id                  String    @id @default(cuid())
+  spentAt             DateTime
+  payee               String
+  propertyId           String?
+  unitId               String?
+  category             String
+  amountYen            Int
+  taxType              String    @default("対象外")
+  paymentMethod        String    @default("振込")
+  hasReceipt           Boolean   @default(false)
+  accountingMemo       String?
+  taxReturnCategory    String?
+  status               String    @default("有効")
+  memo                 String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  archivedAt           DateTime?
+  property             Property? @relation(fields: [propertyId], references: [id])
+  unit                 Unit?     @relation(fields: [unitId], references: [id])
+  documents            Document[]
+}
+
+model Repair {
+  id                 String    @id @default(cuid())
+  propertyId          String
+  unitId              String?
+  occurredAt          DateTime
+  description         String
+  repairType          String
+  vendorName          String?
+  estimateAmountYen   Int?
+  finalAmountYen      Int?
+  approvalStatus      String    @default("未確認")
+  workStatus          String    @default("未着手")
+  linkedExpenseId     String?
+  memo                String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  archivedAt          DateTime?
+  property            Property  @relation(fields: [propertyId], references: [id])
+  unit                Unit?     @relation(fields: [unitId], references: [id])
+  documents           Document[]
+}
+
+model Loan {
+  id                    String    @id @default(cuid())
+  propertyId             String
+  lenderName             String
+  borrowedAt             DateTime
+  initialPrincipalYen    Int
+  currentBalanceYen      Int
+  interestRate           String
+  interestType           String    @default("固定")
+  monthlyPaymentYen      Int
+  principalPartYen       Int       @default(0)
+  interestPartYen        Int       @default(0)
+  paymentDay             Int       @default(27)
+  expectedPayoffDate     DateTime?
+  memo                   String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  archivedAt             DateTime?
+  property               Property  @relation(fields: [propertyId], references: [id])
+  payments               LoanPayment[]
+  documents              Document[]
+}
+
+model LoanPayment {
+  id               String   @id @default(cuid())
+  loanId           String
+  paidAt           DateTime
+  totalAmountYen   Int
+  principalYen     Int
+  interestYen      Int
+  balanceAfterYen  Int
+  memo             String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  archivedAt       DateTime?
+  loan             Loan     @relation(fields: [loanId], references: [id])
+}
+
+model Document {
+  id                    String    @id @default(cuid())
+  displayName           String
+  documentType          String
+  originalFileName      String
+  originalPath          String?
+  storedPath            String
+  mimeType              String?
+  sizeBytes             Int
+  sha256Hash            String
+  propertyId            String?
+  unitId                String?
+  contractId            String?
+  spotChargeId          String?
+  depositTransactionId  String?
+  expenseId             String?
+  repairId              String?
+  loanId                String?
+  issuedAt              DateTime?
+  receivedAt            DateTime?
+  amountYen             Int?
+  counterparty          String?
+  status                String    @default("有効")
+  memo                  String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  archivedAt            DateTime?
+  property              Property? @relation(fields: [propertyId], references: [id])
+  unit                  Unit?     @relation(fields: [unitId], references: [id])
+  contract              Contract? @relation(fields: [contractId], references: [id])
+  spotCharge            SpotCharge? @relation(fields: [spotChargeId], references: [id])
+  depositTransaction    DepositTransaction? @relation(fields: [depositTransactionId], references: [id])
+  expense               Expense?  @relation(fields: [expenseId], references: [id])
+  repair                Repair?   @relation(fields: [repairId], references: [id])
+  loan                  Loan?     @relation(fields: [loanId], references: [id])
+}
+
+model ReportMemo {
+  id          String   @id @default(cuid())
+  reportType  String
+  targetMonth String?
+  targetYear  Int?
+  body        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  archivedAt  DateTime?
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  operatedAt  DateTime @default(now())
+  actionType  String
+  targetTable String
+  targetId    String
+  beforeJson  String?
+  afterJson   String?
+  memo        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  archivedAt  DateTime?
+}
+
+model ImportBatch {
+  id             String   @id @default(cuid())
+  importType     String
+  fileName       String
+  status         String   @default("確認中")
+  totalRows      Int      @default(0)
+  importedRows   Int      @default(0)
+  duplicateRows  Int      @default(0)
+  errorRows      Int      @default(0)
+  memo           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  archivedAt     DateTime?
+  rows           ImportRow[]
+}
+
+model ImportRow {
+  id             String   @id @default(cuid())
+  importBatchId  String
+  rowNumber      Int
+  rawJson        String
+  status         String
+  errorMessage   String?
+  createdPaymentId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  archivedAt     DateTime?
+  importBatch    ImportBatch @relation(fields: [importBatchId], references: [id])
+}
+
+model BackupHistory {
+  id              String   @id @default(cuid())
+  backedUpAt      DateTime @default(now())
+  backupPath      String
+  appVersion      String
+  dbVersion       String
+  propertyCount   Int      @default(0)
+  unitCount       Int      @default(0)
+  tenantCount     Int      @default(0)
+  contractCount   Int      @default(0)
+  status          String   @default("完了")
+  memo            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  archivedAt      DateTime?
+}

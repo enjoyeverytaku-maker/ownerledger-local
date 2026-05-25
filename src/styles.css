@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 190 30% 97%;
+  --foreground: 214 25% 18%;
+  --border: 204 22% 88%;
+  --primary: 180 58% 25%;
+  --primary-foreground: 0 0% 100%;
+  font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(135deg, rgba(25, 115, 107, 0.08), rgba(255, 255, 255, 0) 34%),
+    hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 268px 1fr;
+}
+
+.side-nav {
+  background: linear-gradient(180deg, #123f42 0%, #102f35 56%, #172b32 100%);
+  color: white;
+  padding: 26px 18px;
+  box-shadow: 12px 0 32px rgb(15 23 42 / 0.12);
+}
+
+.main-area {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  min-height: 78px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid hsl(var(--border));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.content {
+  padding: 30px;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  box-shadow: 0 14px 34px rgb(15 23 42 / 0.07);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  font-weight: 700;
+}
+
+.field input,
+.field select,
+.field textarea {
+  border: 1px solid #b7c7cb;
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: #fbfefd;
+  min-height: 44px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: #19736b;
+  box-shadow: 0 0 0 3px rgba(25, 115, 107, 0.14);
+  background: white;
+}
+
+button {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button.bg-primary {
+  box-shadow: 0 10px 22px rgba(25, 115, 107, 0.22);
+}
+
+.badge {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  width: fit-content;
+}
+
+.badge-ok { background: #d9fbe8; color: #11623c; border: 1px solid #a7f3d0; }
+.badge-warn { background: #fff4cc; color: #8a4b07; border: 1px solid #fde68a; }
+.badge-danger { background: #ffe1e1; color: #991b1b; border: 1px solid #fecaca; }
+.badge-muted { background: #edf3f5; color: #334155; border: 1px solid #d7e2e6; }
+
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+  .side-nav {
+    position: static;
+  }
+}
