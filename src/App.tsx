@@ -1385,11 +1385,15 @@ function ReportPage({ onMessage }: { onMessage: (message: string) => void }) {
 function BackupPage({ onMessage }: { onMessage: (message: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [restoreBusy, setRestoreBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const create = async () => {
     setBusy(true);
+    setError(null);
     try {
       const result = await api.createBackup();
       onMessage(`バックアップが完了しました。保存先：${result.backupPath}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "バックアップを作成できませんでした。保存先や空き容量を確認してください。");
     } finally {
       setBusy(false);
     }
@@ -1398,9 +1402,12 @@ function BackupPage({ onMessage }: { onMessage: (message: string) => void }) {
     const answer = window.confirm("バックアップから復元すると、現在のデータは復元前の状態に戻ります。念のため、現在のデータも自動退避してから復元します。よろしいですか？");
     if (!answer) return;
     setRestoreBusy(true);
+    setError(null);
     try {
       const result = await api.restoreBackup();
       onMessage(`復元が完了しました。復元元：${result.restoredFrom} / 復元前の自動退避：${result.safetyBackupPath}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "バックアップから復元できませんでした。選択したファイルを確認してください。");
     } finally {
       setRestoreBusy(false);
     }
@@ -1409,6 +1416,7 @@ function BackupPage({ onMessage }: { onMessage: (message: string) => void }) {
     <div className="card max-w-3xl p-6">
       <h2 className="text-2xl font-bold">バックアップ</h2>
       <p className="mt-3 text-slate-700">バックアップは、PCの故障や誤操作に備えて、現在のデータを別ファイルに保存する機能です。</p>
+      {error ? <div className="mt-5 rounded-lg border border-red-300 bg-red-50 px-4 py-3 font-bold text-red-800">{error}</div> : null}
       <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
         <div className="font-bold">保存されるもの</div>
         <p className="mt-1 text-slate-600">保存データ、添付ファイル、作成日時や件数の情報を zip 形式でまとめます。</p>

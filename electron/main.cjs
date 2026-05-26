@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const AdmZip = require("adm-zip");
+const { parseBackupMetadata, validateBackupEntries, verifyBackupDatabaseHash } = require("./backup-safety.cjs");
 
 const userDataDir = app.getPath("userData");
 const dataDir = path.join(userDataDir, "user-data");
@@ -13,12 +14,16 @@ fs.mkdirSync(attachmentsDir, { recursive: true });
 process.env.DATABASE_URL = `file:${dbPath.replace(/\\/g, "/")}`;
 
 const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+let prisma = new PrismaClient();
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
 function serialize(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function reconnectPrisma() {
+  prisma = new PrismaClient();
 }
 
 async function audit(actionType, targetTable, targetId, beforeValue, afterValue, memo) {
@@ -1060,9 +1065,12 @@ ipcMain.handle("backup:restore", async () => {
   if (result.canceled || !result.filePaths[0]) throw new Error("復元するバックアップファイルが選ばれていません。");
   const restorePath = result.filePaths[0];
   const zip = new AdmZip(restorePath);
-  const entries = zip.getEntries().map((entry) => entry.entryName.replace(/\\/g, "/"));
-  if (!entries.includes("database.sqlite")) throw new Error("バックアップ内に保存データが見つかりません。正しいバックアップファイルを選んでください。");
-  if (!entries.includes("metadata.json")) throw new Error("バックアップ情報が見つかりません。正しいバックアップファイルを選んでください。");
+  validateBackupEntries(zip.getEntries().map((entry) => entry.entryName));
+  const metadataEntry = zip.getEntry("metadata.json");
+  const databaseEntry = zip.getEntry("database.sqlite");
+  if (!metadataEntry || !databaseEntry) throw new Error("バックアップファイルの形式が正しくありません。");
+  const metadata = parseBackupMetadata(metadataEntry.getData());
+  verifyBackupDatabaseHash(metadata, databaseEntry.getData());
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const safetyDir = path.join(dataDir, "pre-restore-backups");
@@ -1072,19 +1080,27 @@ ipcMain.handle("backup:restore", async () => {
 
   const stagingDir = path.join(dataDir, `restore-staging-${crypto.randomUUID()}`);
   fs.mkdirSync(stagingDir, { recursive: true });
-  zip.extractAllTo(stagingDir, true);
-  const stagedDbPath = path.join(stagingDir, "database.sqlite");
-  const stagedAttachmentsDir = path.join(stagingDir, "attachments");
-  if (!fs.existsSync(stagedDbPath)) throw new Error("復元用の保存データを展開できませんでした。");
+  let disconnectedForRestore = false;
+  try {
+    zip.extractAllTo(stagingDir, true);
+    const stagedDbPath = path.join(stagingDir, "database.sqlite");
+    const stagedAttachmentsDir = path.join(stagingDir, "attachments");
+    if (!fs.existsSync(stagedDbPath)) throw new Error("復元用の保存データを展開できませんでした。");
 
-  await prisma.$disconnect();
-  fs.copyFileSync(stagedDbPath, dbPath);
-  fs.rmSync(attachmentsDir, { recursive: true, force: true });
-  fs.mkdirSync(attachmentsDir, { recursive: true });
-  if (fs.existsSync(stagedAttachmentsDir)) {
-    fs.cpSync(stagedAttachmentsDir, attachmentsDir, { recursive: true });
+    await prisma.$disconnect();
+    disconnectedForRestore = true;
+    fs.copyFileSync(stagedDbPath, dbPath);
+    fs.rmSync(attachmentsDir, { recursive: true, force: true });
+    fs.mkdirSync(attachmentsDir, { recursive: true });
+    if (fs.existsSync(stagedAttachmentsDir)) {
+      fs.cpSync(stagedAttachmentsDir, attachmentsDir, { recursive: true });
+    }
+    reconnectPrisma();
+    disconnectedForRestore = false;
+  } finally {
+    if (disconnectedForRestore) reconnectPrisma();
+    fs.rmSync(stagingDir, { recursive: true, force: true });
   }
-  fs.rmSync(stagingDir, { recursive: true, force: true });
 
   const [propertyCount, unitCount, tenantCount, contractCount] = await Promise.all([
     prisma.property.count({ where: { archivedAt: null } }),
