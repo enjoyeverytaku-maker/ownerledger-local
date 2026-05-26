@@ -1,8 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import App from "../src/App";
 
-function markSetupCompleted() {
+function markSetupCompleted(overrides: Record<string, unknown> = {}) {
   localStorage.setItem("ownerledger-local-browser-data", JSON.stringify({
     setupCompleted: true,
     properties: [],
@@ -16,7 +16,8 @@ function markSetupCompleted() {
     expenses: [],
     deposits: [],
     repairs: [],
-    documents: []
+    documents: [],
+    ...overrides
   }));
 }
 
@@ -55,6 +56,7 @@ describe("beginner-friendly UI", () => {
   it("文字サイズを大きくできる", async () => {
     markSetupCompleted();
     render(<App />);
+    await screen.findByText("確認が必要なこと");
     fireEvent.click(await screen.findByRole("button", { name: "特大" }));
     expect(document.documentElement.dataset.fontSize).toBe("extra-large");
     expect(localStorage.getItem("ownerledger-font-size")).toBe("extra-large");
@@ -65,5 +67,34 @@ describe("beginner-friendly UI", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "支出を入れる" }));
     expect(await screen.findByRole("heading", { name: "支出を登録する" })).toBeInTheDocument();
+  });
+
+  it("入居者登録では物件が1件なら初期選択され、部屋と契約も保存できる", async () => {
+    markSetupCompleted({
+      properties: [{
+        id: "property_1",
+        name: "山田ハイツ",
+        propertyType: "アパート",
+        totalUnits: 6,
+        managementType: "自主管理",
+        status: "保有中"
+      }]
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "入居者" }));
+    const propertySelect = await screen.findByLabelText("入居する物件") as HTMLSelectElement;
+    expect(propertySelect.value).toBe("property_1");
+    fireEvent.change(screen.getByLabelText(/氏名\/法人名/), { target: { value: "田中 太郎" } });
+    fireEvent.change(screen.getByLabelText("部屋番号 必須"), { target: { value: "101" } });
+    fireEvent.change(screen.getByLabelText("家賃 必須"), { target: { value: "65000" } });
+    fireEvent.click(screen.getByRole("button", { name: /保存する/ }));
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem("ownerledger-local-browser-data") ?? "{}");
+      expect(saved.tenants).toHaveLength(1);
+      expect(saved.units).toHaveLength(1);
+      expect(saved.contracts).toHaveLength(1);
+      expect(saved.units[0]).toMatchObject({ propertyId: "property_1", roomNumber: "101" });
+      expect(saved.contracts[0]).toMatchObject({ propertyId: "property_1", rentYen: 65000 });
+    });
   });
 });

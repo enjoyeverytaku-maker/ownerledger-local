@@ -50,6 +50,10 @@ function textInput(value: FormDataEntryValue | null): string {
   return String(value ?? "").trim();
 }
 
+function todayText(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function App() {
   const [ready, setReady] = useState<boolean | null>(null);
   const [screen, setScreen] = useState("ホーム");
@@ -378,6 +382,7 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
   const [contracts, setContracts] = useState<ContractRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [tenantPropertyId, setTenantPropertyId] = useState("");
 
   const reload = useCallback(async () => {
     const [propertyList, unitList, tenantList, contractList] = await Promise.all([api.listProperties(), api.listUnits(), api.listTenants(), api.listContracts()]);
@@ -389,6 +394,15 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (kind !== "tenant") return;
+    if (properties.length === 1) {
+      setTenantPropertyId(properties[0].id);
+      return;
+    }
+    if (!properties.some((property) => property.id === tenantPropertyId)) setTenantPropertyId("");
+  }, [kind, properties, tenantPropertyId]);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -408,6 +422,15 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
         await api.createProperty(input);
         onMessage("物件を保存しました。");
       } else {
+        const propertyId = textInput(form.get("propertyId"));
+        const roomNumber = textInput(form.get("roomNumber"));
+        const rentYen = yenInput(form.get("rentYen"));
+        const startDate = textInput(form.get("startDate")) || todayText();
+        if (!propertyId) throw new Error("入居する物件を選んでください。");
+        if (!roomNumber) throw new Error("部屋番号を入力してください。");
+        if (rentYen <= 0) throw new Error("家賃を1円以上で入力してください。");
+        const activeContract = contracts.find((contract) => contract.propertyId === propertyId && contract.roomNumber === roomNumber && contract.status === "契約中");
+        if (activeContract) throw new Error("この部屋には契約中の入居者が登録されています。部屋番号を確認してください。");
         const input = tenantSchema.parse({
           displayName: textInput(form.get("displayName")),
           kanaName: textInput(form.get("kanaName")),
@@ -418,13 +441,45 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
           status: textInput(form.get("status")),
           memo: textInput(form.get("memo"))
         });
-        await api.createTenant(input);
-        onMessage("入居者を保存しました。");
+        const tenant = await api.createTenant(input);
+        const existingUnit = units.find((unit) => unit.propertyId === propertyId && unit.roomNumber === roomNumber);
+        const unit = existingUnit ?? await api.createUnit({
+          propertyId,
+          roomNumber,
+          expectedRentYen: rentYen,
+          currentRentYen: rentYen,
+          commonFeeYen: 0,
+          parkingFeeYen: 0,
+          otherMonthlyFeeYen: 0,
+          status: "入居中",
+          memo: "入居者登録から作成"
+        });
+        await api.createContract({
+          propertyId,
+          unitId: unit.id,
+          tenantId: tenant.id,
+          startDate,
+          endDate: "",
+          rentYen,
+          commonFeeYen: 0,
+          managementFeeYen: 0,
+          parkingFeeYen: 0,
+          otherMonthlyFeeYen: 0,
+          securityDepositYen: 0,
+          keyMoneyYen: 0,
+          guaranteeDepositYen: 0,
+          paymentDueDay: 27,
+          paymentMethod: "振込",
+          status: "契約中",
+          memo: "入居者登録から作成"
+        });
+        onMessage("入居者・部屋・契約を保存しました。");
+        setTenantPropertyId(properties.length === 1 ? properties[0].id : "");
       }
       event.currentTarget.reset();
       await reload();
     } catch (caught) {
-      setError(caught instanceof z.ZodError ? friendlyZodError(caught) : "保存できませんでした。入力内容を確認してください。");
+      setError(caught instanceof z.ZodError ? friendlyZodError(caught) : caught instanceof Error ? caught.message : "保存できませんでした。入力内容を確認してください。");
     }
   };
 
@@ -445,6 +500,19 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
         ) : (
           <>
             <FormInput name="displayName" label="氏名/法人名" required placeholder="例：田中 太郎" />
+            <FormSelect
+              name="propertyId"
+              label="入居する物件"
+              value={tenantPropertyId}
+              onChange={setTenantPropertyId}
+              options={[
+                ...(properties.length === 1 ? [] : [{ label: "選択してください", value: "" }]),
+                ...properties.map((item) => ({ label: item.name, value: item.id }))
+              ]}
+            />
+            <FormInput name="roomNumber" label="部屋番号" required placeholder="例：101" />
+            <FormInput name="rentYen" label="家賃" required placeholder="例：65000" />
+            <FormInput name="startDate" label="入居開始日" required type="date" defaultValue={todayText()} />
             <FormInput name="kanaName" label="フリガナ" placeholder="あとで入力できます" />
             <FormSelect name="tenantType" label="区分" options={["個人", "法人"]} />
             <FormInput name="phone" label="電話番号" placeholder="あとで入力できます" />
@@ -458,7 +526,7 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
       </form>
       <div className="grid gap-5">
         <SearchBox value={search} onChange={setSearch} placeholder="入居者名・物件名・部屋番号で検索" />
-        {kind === "property" ? <PropertyList properties={properties.filter((item) => item.name.includes(search) || (item.address ?? "").includes(search))} units={units} contracts={contracts} /> : <TenantList tenants={tenants.filter((item) => item.displayName.includes(search) || (item.kanaName ?? "").includes(search))} />}
+        {kind === "property" ? <PropertyList properties={properties.filter((item) => item.name.includes(search) || (item.address ?? "").includes(search))} units={units} contracts={contracts} /> : <TenantList tenants={tenants.filter((item) => item.displayName.includes(search) || (item.kanaName ?? "").includes(search) || contracts.some((contract) => contract.tenantId === item.id && (`${contract.propertyName ?? ""} ${contract.roomNumber ?? ""}`).includes(search)))} contracts={contracts} />}
       </div>
     </div>
   );
@@ -1541,19 +1609,25 @@ function PropertyList({ properties, units, contracts }: { properties: PropertyRe
   );
 }
 
-function TenantList({ tenants }: { tenants: TenantRecord[] }) {
+function TenantList({ tenants, contracts }: { tenants: TenantRecord[]; contracts: ContractRecord[] }) {
   if (tenants.length === 0) return <EmptyState title="入居者はまだ登録されていません" action="左のフォームから入居者を登録する" />;
   return (
     <div className="grid gap-3">
-      {tenants.map((tenant) => (
-        <div key={tenant.id} className="card flex items-center justify-between p-5">
-          <div>
-            <h3 className="text-lg font-bold">{tenant.displayName}</h3>
-            <p className="text-sm text-slate-600">{tenant.bankTransferName ? `振込名義：${tenant.bankTransferName}` : "振込名義はあとで入力できます"}</p>
+      {tenants.map((tenant) => {
+        const activeContract = contracts.find((contract) => contract.tenantId === tenant.id && contract.status === "契約中") ?? contracts.find((contract) => contract.tenantId === tenant.id);
+        return (
+          <div key={tenant.id} className="card flex items-center justify-between p-5">
+            <div>
+              <h3 className="text-lg font-bold">{tenant.displayName}</h3>
+              <p className="text-sm text-slate-600">
+                {activeContract ? `${activeContract.propertyName ?? "物件"} ${activeContract.roomNumber ?? ""} / ${formatYen(activeContract.rentYen)}` : "入居する物件・部屋は未登録です"}
+              </p>
+              <p className="text-sm text-slate-600">{tenant.bankTransferName ? `振込名義：${tenant.bankTransferName}` : "振込名義はあとで入力できます"}</p>
+            </div>
+            <span className={`badge ${tenant.status === "トラブルあり" ? "badge-danger" : "badge-ok"}`}>{tenant.status}</span>
           </div>
-          <span className={`badge ${tenant.status === "トラブルあり" ? "badge-danger" : "badge-ok"}`}>{tenant.status}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -1581,20 +1655,20 @@ function ContractList({ contracts }: { contracts: ContractRecord[] }) {
   );
 }
 
-function FormInput({ name, label, placeholder, required, type = "text" }: { name: string; label: string; placeholder?: string; required?: boolean; type?: string }) {
+function FormInput({ name, label, placeholder, required, type = "text", defaultValue }: { name: string; label: string; placeholder?: string; required?: boolean; type?: string; defaultValue?: string }) {
   return (
     <div className="field">
       <label htmlFor={name}>{label} {required ? <span className="text-red-700">必須</span> : <span className="text-sm text-slate-500">あとで入力できます</span>}</label>
-      <input id={name} name={name} placeholder={placeholder} type={type} />
+      <input id={name} name={name} placeholder={placeholder} type={type} defaultValue={defaultValue} />
     </div>
   );
 }
 
-function FormSelect({ name, label, options }: { name: string; label: string; options: Array<string | { label: string; value: string }> }) {
+function FormSelect({ name, label, options, defaultValue, value, onChange }: { name: string; label: string; options: Array<string | { label: string; value: string }>; defaultValue?: string; value?: string; onChange?: (value: string) => void }) {
   return (
     <div className="field">
       <label htmlFor={name}>{label}</label>
-      <select id={name} name={name}>
+      <select id={name} name={name} defaultValue={value === undefined ? defaultValue : undefined} value={value} onChange={(event) => onChange?.(event.target.value)}>
         {options.map((option) => typeof option === "string" ? <option key={option} value={option}>{option}</option> : <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </div>
