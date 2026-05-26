@@ -1470,7 +1470,7 @@ function ReportPage({ onMessage }: { onMessage: (message: string) => void }) {
       </div>
       <div className="card p-5">
         <h2 className="text-xl font-bold">税理士提出用データ</h2>
-        <p className="mt-1 text-slate-600">この画面では、税理士に渡すための収入・支出・証憑情報をまとめて出力できます。税務上の判断は税理士にご確認ください。</p>
+        <p className="mt-1 text-slate-600">家賃・共益費・更新料・支出・預り金・証憑を、内訳付きのCSVで出力できます。税務上の判断は税理士にご確認ください。</p>
         <button className="mt-4 rounded-lg bg-primary px-5 py-3 font-bold text-white" onClick={() => void exportCsv()}><FileText className="mr-2 inline" size={18} />税理士提出用CSVを出力する</button>
       </div>
       <div className="grid grid-cols-[1.2fr_1fr] gap-6">
