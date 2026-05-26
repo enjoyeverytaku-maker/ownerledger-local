@@ -2,6 +2,24 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import App from "../src/App";
 
+function markSetupCompleted() {
+  localStorage.setItem("ownerledger-local-browser-data", JSON.stringify({
+    setupCompleted: true,
+    properties: [],
+    units: [],
+    tenants: [],
+    contracts: [],
+    charges: [],
+    spotCharges: [],
+    payments: [],
+    allocations: [],
+    expenses: [],
+    deposits: [],
+    repairs: [],
+    documents: []
+  }));
+}
+
 describe("beginner-friendly UI", () => {
   it("初回セットアップ画面を表示する", async () => {
     localStorage.clear();
@@ -26,25 +44,26 @@ describe("beginner-friendly UI", () => {
   });
 
   it("販売前の未完成メニューを表示しない", async () => {
-    localStorage.setItem("ownerledger-local-browser-data", JSON.stringify({
-      setupCompleted: true,
-      properties: [],
-      units: [],
-      tenants: [],
-      contracts: [],
-      charges: [],
-      spotCharges: [],
-      payments: [],
-      allocations: [],
-      expenses: [],
-      deposits: [],
-      repairs: [],
-      documents: []
-    }));
+    markSetupCompleted();
     render(<App />);
     expect(await screen.findByText("OwnerLedger")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "未収・滞納" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "ローン" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "設定" })).not.toBeInTheDocument();
+  });
+
+  it("文字サイズを大きくできる", async () => {
+    markSetupCompleted();
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "特大" }));
+    expect(document.documentElement.dataset.fontSize).toBe("extra-large");
+    expect(localStorage.getItem("ownerledger-font-size")).toBe("extra-large");
+  });
+
+  it("かんたん操作から目的の画面へ移動できる", async () => {
+    markSetupCompleted();
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "支出を入れる" }));
+    expect(await screen.findByRole("heading", { name: "支出を登録する" })).toBeInTheDocument();
   });
 });

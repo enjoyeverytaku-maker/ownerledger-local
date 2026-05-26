@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -20,6 +20,7 @@ let prisma = new PrismaClient();
 const logger = createRuntimeLogger(logsDir);
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
+let mainWindow = null;
 
 function serialize(value) {
   return JSON.parse(JSON.stringify(value));
@@ -81,12 +82,72 @@ async function createWindow() {
       nodeIntegration: false
     }
   });
+  mainWindow = win;
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
 
   if (isDev) {
     await win.loadURL("http://127.0.0.1:5173");
   } else {
     await win.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+}
+
+function sendToMainWindow(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+  }
+}
+
+function setupApplicationMenu() {
+  const template = [
+    {
+      label: "ファイル",
+      submenu: [
+        { label: "ホームを開く", click: () => sendToMainWindow("screen:set", "ホーム") },
+        { label: "バックアップを開く", click: () => sendToMainWindow("screen:set", "バックアップ") },
+        { type: "separator" },
+        { label: "終了", role: "quit" }
+      ]
+    },
+    {
+      label: "かんたん操作",
+      submenu: [
+        { label: "入金を確認する", click: () => sendToMainWindow("screen:set", "家賃・入金") },
+        { label: "支出を登録する", click: () => sendToMainWindow("screen:set", "支出") },
+        { label: "書類を添付する", click: () => sendToMainWindow("screen:set", "書類") },
+        { label: "バックアップする", click: () => sendToMainWindow("screen:set", "バックアップ") }
+      ]
+    },
+    {
+      label: "表示",
+      submenu: [
+        { label: "文字サイズ: 標準", click: () => sendToMainWindow("font-size:set", "standard") },
+        { label: "文字サイズ: 大きい", click: () => sendToMainWindow("font-size:set", "large") },
+        { label: "文字サイズ: 特大", click: () => sendToMainWindow("font-size:set", "extra-large") },
+        { type: "separator" },
+        { label: "拡大", role: "zoomIn" },
+        { label: "縮小", role: "zoomOut" },
+        { label: "拡大率を戻す", role: "resetZoom" }
+      ]
+    },
+    {
+      label: "ヘルプ",
+      submenu: [
+        {
+          label: "このアプリについて",
+          click: () => dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+            type: "info",
+            title: "オーナーレジャー ローカルについて",
+            message: "オーナーレジャー ローカル",
+            detail: "家賃、入金、支出、敷金、書類をローカル保存で管理するためのアプリです。"
+          })
+        }
+      ]
+    }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function monthDate(targetMonth, day) {
@@ -1158,6 +1219,7 @@ ipcMain.handle("backup:restore", async () => {
 
 app.whenReady().then(async () => {
   try {
+    setupApplicationMenu();
     await ensureDatabaseReady();
     await createWindow();
   } catch (error) {

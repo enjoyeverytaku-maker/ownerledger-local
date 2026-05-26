@@ -309,6 +309,8 @@ export interface SetupPayload {
 }
 
 export interface OwnerLedgerApi {
+  onSetScreen?(handler: (screen: string) => void): () => void;
+  onSetFontSize?(handler: (size: FontSizePreference) => void): () => void;
   isReady(): Promise<boolean>;
   completeSetup(payload: SetupPayload): Promise<void>;
   getDashboard(targetMonth: string): Promise<DashboardSummary>;
@@ -349,6 +351,8 @@ export interface OwnerLedgerApi {
   createBackup(directory?: string): Promise<{ backupPath: string }>;
   restoreBackup(): Promise<{ restoredFrom: string; safetyBackupPath: string }>;
 }
+
+export type FontSizePreference = "standard" | "large" | "extra-large";
 
 declare global {
   interface Window {

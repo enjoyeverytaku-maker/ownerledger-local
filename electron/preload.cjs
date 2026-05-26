@@ -3,6 +3,16 @@ const { contextBridge, ipcRenderer } = require("electron");
 const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload);
 
 contextBridge.exposeInMainWorld("ownerLedger", {
+  onSetScreen: (handler) => {
+    const listener = (_event, screen) => handler(screen);
+    ipcRenderer.on("screen:set", listener);
+    return () => ipcRenderer.removeListener("screen:set", listener);
+  },
+  onSetFontSize: (handler) => {
+    const listener = (_event, size) => handler(size);
+    ipcRenderer.on("font-size:set", listener);
+    return () => ipcRenderer.removeListener("font-size:set", listener);
+  },
   isReady: () => invoke("app:isReady"),
   completeSetup: (payload) => invoke("setup:complete", payload),
   getDashboard: (targetMonth) => invoke("dashboard:get", targetMonth),

@@ -29,3 +29,15 @@ Object.defineProperty(globalThis, "ResizeObserver", {
   value: ResizeObserverMock,
   configurable: true
 });
+
+Element.prototype.getBoundingClientRect = vi.fn(() => ({
+  x: 0,
+  y: 0,
+  width: 1024,
+  height: 768,
+  top: 0,
+  right: 1024,
+  bottom: 768,
+  left: 0,
+  toJSON: () => ({})
+}));
