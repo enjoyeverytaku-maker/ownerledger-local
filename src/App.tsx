@@ -545,7 +545,7 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
   const [allocations, setAllocations] = useState<AllocationRecord[]>([]);
   const [candidates, setCandidates] = useState<AllocationCandidate[]>([]);
   const [selectedPayment, setSelectedPayment] = useState<PaymentRecord | null>(null);
-  const [tab, setTab] = useState<"請求" | "スポット請求" | "入金" | "消込" | "契約">("請求");
+  const [tab, setTab] = useState<"請求" | "入金確認" | "スポット請求" | "入金" | "消込" | "契約">("請求");
   const [targetMonth, setTargetMonth] = useState(currentMonth());
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(async () => {
@@ -676,6 +676,25 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
     onMessage("消込を取り消しました。入金と請求の状態を再計算しました。");
     await reload();
   };
+  const confirmPassbookPayment = async (input: { kind: "monthly" | "spot"; id: string; paidAt: string; amountYen: number; payerName: string; description: string }) => {
+    const payment = await api.createPayment({
+      paidAt: input.paidAt,
+      amountYen: input.amountYen,
+      payerName: input.payerName,
+      description: input.description,
+      bankAccount: "通帳確認",
+      memo: "紙の通帳を見ながら入金確認"
+    });
+    await api.createAllocation({
+      paymentId: payment.id,
+      monthlyChargeId: input.kind === "monthly" ? input.id : undefined,
+      spotChargeId: input.kind === "spot" ? input.id : undefined,
+      amountYen: input.amountYen,
+      memo: "通帳確認から自動消込"
+    });
+    onMessage("通帳確認から入金登録と消込を行いました。");
+    await reload();
+  };
   const importCsv = async (file: File | null) => {
     if (!file) return;
     Papa.parse<Record<string, string>>(file, {
@@ -712,12 +731,13 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
         </div>
       </div>
       <div className="flex gap-2">
-        {(["請求", "スポット請求", "入金", "消込", "契約"] as const).map((item) => (
+        {(["請求", "入金確認", "スポット請求", "入金", "消込", "契約"] as const).map((item) => (
           <button key={item} className={`rounded-lg px-5 py-3 font-bold ${tab === item ? "bg-primary text-white" : "border border-slate-300 bg-white"}`} onClick={() => setTab(item)}>{item}</button>
         ))}
       </div>
       {error ? <div className="rounded-lg bg-red-50 p-3 font-bold text-red-800">{error}</div> : null}
       {tab === "請求" && <ChargeList charges={charges} />}
+      {tab === "入金確認" && <PaymentConfirmationPanel charges={charges} spotCharges={spotCharges} onConfirm={(input) => void confirmPassbookPayment(input)} />}
       {tab === "スポット請求" && (
         <div className="grid grid-cols-[420px_1fr] gap-6">
           <form className="card grid gap-4 p-5" onSubmit={(event) => void submitSpotCharge(event)}>
@@ -816,6 +836,63 @@ function ChargeList({ charges }: { charges: MonthlyChargeRecord[] }) {
             <div><div className="text-xs text-slate-500">未入金</div><div className="font-bold text-red-700">{formatYen(charge.unpaidYen)}</div></div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function PaymentConfirmationPanel({ charges, spotCharges, onConfirm }: { charges: MonthlyChargeRecord[]; spotCharges: SpotChargeRecord[]; onConfirm: (input: { kind: "monthly" | "spot"; id: string; paidAt: string; amountYen: number; payerName: string; description: string }) => void }) {
+  const [paidAt, setPaidAt] = useState(todayText());
+  const unpaidMonthly = charges.filter((charge) => charge.unpaidYen > 0 && !["入金済", "取消", "免除"].includes(String(charge.status)));
+  const unpaidSpot = spotCharges.filter((charge) => charge.remainingYen > 0 && !["入金済"].includes(String(charge.paidStatus)));
+  return (
+    <div className="grid gap-6">
+      <div className="grid grid-cols-2 gap-5">
+        <div className="card p-5">
+          <h2 className="text-xl font-bold">銀行API連携</h2>
+          <p className="mt-1 text-sm text-slate-600">銀行APIや外部明細サービスから入金明細を取り込み、振込名義と金額で自動消込する方式です。</p>
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-600">準備中: 先にCSV取込と通帳確認で運用できます。</div>
+        </div>
+        <div className="card p-5">
+          <h2 className="text-xl font-bold">通帳を見ながら確認</h2>
+          <p className="mt-1 text-sm text-slate-600">紙の通帳やネットバンキング画面で入金を見つけたら、該当行のボタンで入金登録と消込をまとめて行います。</p>
+          <div className="field mt-4">
+            <label>確認した入金日</label>
+            <input type="date" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} />
+          </div>
+        </div>
+      </div>
+      <div className="card overflow-hidden">
+        <div className="border-b border-slate-200 p-5">
+          <h2 className="text-xl font-bold">未入金チェックリスト</h2>
+        </div>
+        {unpaidMonthly.length === 0 && unpaidSpot.length === 0 ? (
+          <div className="p-5 text-slate-600">未入金の請求はありません。</div>
+        ) : (
+          <div className="divide-y divide-slate-200">
+            {unpaidMonthly.map((charge) => (
+              <div key={charge.id} className="grid grid-cols-[1fr_150px_150px] items-center gap-4 p-4">
+                <div>
+                  <div className="font-bold">{charge.tenantName}</div>
+                  <div className="text-sm text-slate-600">{charge.propertyName} {charge.roomNumber} / {formatMonthForDisplay(charge.targetMonth)} / 月次請求</div>
+                </div>
+                <div><div className="text-xs text-slate-500">未入金</div><div className="font-bold text-red-700">{formatYen(charge.unpaidYen)}</div></div>
+                <button className="rounded-lg bg-primary px-4 py-2 font-bold text-white" onClick={() => onConfirm({ kind: "monthly", id: charge.id, paidAt, amountYen: charge.unpaidYen, payerName: charge.tenantName ?? "通帳確認", description: `${formatMonthForDisplay(charge.targetMonth)} 家賃入金` })}>入金あり</button>
+              </div>
+            ))}
+            {unpaidSpot.map((charge) => (
+              <div key={charge.id} className="grid grid-cols-[1fr_150px_150px] items-center gap-4 p-4">
+                <div>
+                  <div className="font-bold">{charge.tenantName}</div>
+                  <div className="text-sm text-slate-600">{charge.propertyName} {charge.roomNumber} / {charge.chargeType}</div>
+                  <div className="text-sm text-slate-600">{charge.description}</div>
+                </div>
+                <div><div className="text-xs text-slate-500">未入金</div><div className="font-bold text-red-700">{formatYen(charge.remainingYen)}</div></div>
+                <button className="rounded-lg bg-primary px-4 py-2 font-bold text-white" onClick={() => onConfirm({ kind: "spot", id: charge.id, paidAt, amountYen: charge.remainingYen, payerName: charge.tenantName ?? "通帳確認", description: `${charge.chargeType} 入金` })}>入金あり</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
