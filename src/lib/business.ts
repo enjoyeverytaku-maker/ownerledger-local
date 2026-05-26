@@ -24,6 +24,29 @@ export interface ExpenseLike {
   propertyId?: string | null;
 }
 
+export interface ProratedChargeInput {
+  targetMonth: string;
+  startDate: string;
+  endDate?: string | null;
+  rentYen: number;
+  commonFeeYen: number;
+  managementFeeYen: number;
+  parkingFeeYen: number;
+  otherMonthlyFeeYen: number;
+}
+
+export interface ProratedChargeResult {
+  billableDays: number;
+  daysInMonth: number;
+  rentYen: number;
+  commonFeeYen: number;
+  managementFeeYen: number;
+  parkingFeeYen: number;
+  otherMonthlyFeeYen: number;
+  totalBilledYen: number;
+  memo: string | null;
+}
+
 export function calculateUnpaid(charge: ChargeLike): number {
   return Math.max(0, charge.totalBilledYen - charge.paidYen);
 }
@@ -68,4 +91,56 @@ export function aggregateExpensesByCategory(expenses: ExpenseLike[]): Array<{ na
     map.set(expense.category, (map.get(expense.category) ?? 0) + expense.amountYen);
   }
   return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
+}
+
+function localDate(dateText: string): Date {
+  const [year, month, day] = dateText.slice(0, 10).split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function daysInTargetMonth(targetMonth: string): number {
+  const [year, month] = targetMonth.split("-").map(Number);
+  return new Date(year, month, 0).getDate();
+}
+
+function prorate(amountYen: number, billableDays: number, daysInMonth: number): number {
+  return Math.round((amountYen * billableDays) / daysInMonth);
+}
+
+export function calculateProratedMonthlyCharge(input: ProratedChargeInput): ProratedChargeResult | null {
+  const [year, month] = input.targetMonth.split("-").map(Number);
+  const daysInMonth = daysInTargetMonth(input.targetMonth);
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month - 1, daysInMonth);
+  const startDate = localDate(input.startDate);
+  const endDate = input.endDate ? localDate(input.endDate) : null;
+  const billStart = startDate > monthStart ? startDate : monthStart;
+  const billEnd = endDate && endDate < monthEnd ? endDate : monthEnd;
+  if (billStart > billEnd) return null;
+  const billableDays = Math.floor((billEnd.getTime() - billStart.getTime()) / 86400000) + 1;
+  const rentYen = prorate(input.rentYen, billableDays, daysInMonth);
+  const commonFeeYen = prorate(input.commonFeeYen, billableDays, daysInMonth);
+  const managementFeeYen = prorate(input.managementFeeYen, billableDays, daysInMonth);
+  const parkingFeeYen = prorate(input.parkingFeeYen, billableDays, daysInMonth);
+  const otherMonthlyFeeYen = prorate(input.otherMonthlyFeeYen, billableDays, daysInMonth);
+  const isProrated = billableDays !== daysInMonth;
+  return {
+    billableDays,
+    daysInMonth,
+    rentYen,
+    commonFeeYen,
+    managementFeeYen,
+    parkingFeeYen,
+    otherMonthlyFeeYen,
+    totalBilledYen: rentYen + commonFeeYen + managementFeeYen + parkingFeeYen + otherMonthlyFeeYen,
+    memo: isProrated ? `日割り計算: ${dateKey(billStart)}から${dateKey(billEnd)}まで ${billableDays}/${daysInMonth}日` : null
+  };
+}
+
+export function isRenewalMonth(targetMonth: string, renewalDate?: string | null): boolean {
+  return Boolean(renewalDate && renewalDate.slice(0, 7) === targetMonth);
 }

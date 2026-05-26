@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aggregateExpensesByCategory, calculateChargeStatus, calculateDepositBalance, calculatePaymentStatus, calculateUnpaid, detectPaymentDuplicateKey, validateAllocationAmount } from "../src/lib/business";
+import { aggregateExpensesByCategory, calculateChargeStatus, calculateDepositBalance, calculatePaymentStatus, calculateProratedMonthlyCharge, calculateUnpaid, detectPaymentDuplicateKey, isRenewalMonth, validateAllocationAmount } from "../src/lib/business";
 import { contractSchema, propertySchema, setupSchema } from "../src/lib/validation";
 
 describe("OwnerLedger business rules", () => {
@@ -42,6 +42,40 @@ describe("OwnerLedger business rules", () => {
     const second = detectPaymentDuplicateKey({ paidAt: "2026-05-25T10:00:00.000Z", amountYen: 81000, payerName: "ヤマダ　タロウ", description: "家賃" });
     expect(first).toBe(second);
   });
+
+  it("入居月と退去月の家賃を日割り計算する", () => {
+    const moveIn = calculateProratedMonthlyCharge({
+      targetMonth: "2026-05",
+      startDate: "2026-05-16",
+      rentYen: 93000,
+      commonFeeYen: 3100,
+      managementFeeYen: 0,
+      parkingFeeYen: 0,
+      otherMonthlyFeeYen: 0
+    });
+    expect(moveIn?.billableDays).toBe(16);
+    expect(moveIn?.rentYen).toBe(48000);
+    expect(moveIn?.commonFeeYen).toBe(1600);
+    expect(moveIn?.memo).toContain("日割り計算");
+
+    const moveOut = calculateProratedMonthlyCharge({
+      targetMonth: "2026-05",
+      startDate: "2025-01-01",
+      endDate: "2026-05-10",
+      rentYen: 93000,
+      commonFeeYen: 0,
+      managementFeeYen: 0,
+      parkingFeeYen: 0,
+      otherMonthlyFeeYen: 0
+    });
+    expect(moveOut?.billableDays).toBe(10);
+    expect(moveOut?.rentYen).toBe(30000);
+  });
+
+  it("更新料の対象月を判定する", () => {
+    expect(isRenewalMonth("2026-05", "2026-05-20")).toBe(true);
+    expect(isRenewalMonth("2026-06", "2026-05-20")).toBe(false);
+  });
 });
 
 describe("Japanese validation messages", () => {
@@ -71,6 +105,9 @@ describe("Japanese validation messages", () => {
       securityDepositYen: 0,
       keyMoneyYen: 0,
       guaranteeDepositYen: 0,
+      renewalDate: "",
+      renewalFeeYen: 0,
+      renewalAdminFeeYen: 0,
       paymentDueDay: 27,
       paymentMethod: "振込",
       status: "契約中"

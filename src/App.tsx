@@ -460,6 +460,7 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
           tenantId: tenant.id,
           startDate,
           endDate: "",
+          renewalDate: "",
           rentYen,
           commonFeeYen: 0,
           managementFeeYen: 0,
@@ -468,6 +469,8 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
           securityDepositYen: 0,
           keyMoneyYen: 0,
           guaranteeDepositYen: 0,
+          renewalFeeYen: 0,
+          renewalAdminFeeYen: 0,
           paymentDueDay: 27,
           paymentMethod: "振込",
           status: "契約中",
@@ -571,6 +574,7 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
         tenantId: textInput(form.get("tenantId")),
         startDate: textInput(form.get("startDate")),
         endDate: textInput(form.get("endDate")),
+        renewalDate: textInput(form.get("renewalDate")),
         rentYen: yenInput(form.get("rentYen")),
         commonFeeYen: yenInput(form.get("commonFeeYen")),
         managementFeeYen: yenInput(form.get("managementFeeYen")),
@@ -579,6 +583,8 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
         securityDepositYen: yenInput(form.get("securityDepositYen")),
         keyMoneyYen: yenInput(form.get("keyMoneyYen")),
         guaranteeDepositYen: yenInput(form.get("guaranteeDepositYen")),
+        renewalFeeYen: yenInput(form.get("renewalFeeYen")),
+        renewalAdminFeeYen: yenInput(form.get("renewalAdminFeeYen")),
         paymentDueDay: Number(form.get("paymentDueDay")),
         paymentMethod: textInput(form.get("paymentMethod")),
         status: "契約中",
@@ -697,7 +703,7 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
     <div className="grid gap-6">
       <div className="card p-5">
         <h2 className="text-xl font-bold">月次請求を生成する</h2>
-        <p className="mt-1 text-slate-600">契約中の部屋について、対象月の「今月入る予定の金額」を作成します。作成済みの請求は重複作成しません。</p>
+        <p className="mt-1 text-slate-600">契約中の部屋について、対象月の「今月入る予定の金額」を作成します。入居月・退去月の日割りと更新料も自動反映します。</p>
         <div className="mt-4 flex items-end gap-3">
           <div className="field">
             <label>対象月</label>
@@ -766,6 +772,7 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
           <FormSelect name="tenantId" label="入居者" options={tenants.map((item) => ({ label: item.displayName, value: item.id }))} />
           <FormInput name="startDate" label="契約開始日" required type="date" />
           <FormInput name="endDate" label="契約終了日" type="date" />
+          <FormInput name="renewalDate" label="次回更新日" type="date" />
           <FormInput name="rentYen" label="家賃" required placeholder="例：65000" />
           <FormInput name="commonFeeYen" label="共益費" placeholder="0" />
           <FormInput name="managementFeeYen" label="管理費" placeholder="0" />
@@ -774,6 +781,8 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
           <FormInput name="securityDepositYen" label="敷金" placeholder="0" />
           <FormInput name="keyMoneyYen" label="礼金" placeholder="0" />
           <FormInput name="guaranteeDepositYen" label="保証金" placeholder="0" />
+          <FormInput name="renewalFeeYen" label="更新料" placeholder="0" />
+          <FormInput name="renewalAdminFeeYen" label="更新事務手数料" placeholder="0" />
           <FormInput name="paymentDueDay" label="支払期日" required placeholder="27" />
           <FormSelect name="paymentMethod" label="入金方法" options={["振込", "口座振替", "保証会社送金", "現金", "その他"]} />
           <FormInput name="memo" label="メモ" placeholder="特約や注意点など" />
@@ -800,6 +809,7 @@ function ChargeList({ charges }: { charges: MonthlyChargeRecord[] }) {
             <div>
               <div className="font-bold">{charge.tenantName}</div>
               <div className="text-sm text-slate-600">{charge.propertyName} {charge.roomNumber} / {formatMonthForDisplay(charge.targetMonth)}</div>
+              {charge.memo ? <div className="text-xs font-bold text-emerald-700">{charge.memo}</div> : null}
             </div>
             <span className={`badge ${charge.status === "入金済" ? "badge-ok" : charge.status === "一部入金" ? "badge-warn" : "badge-muted"}`}>{charge.status}</span>
             <div><div className="text-xs text-slate-500">予定額</div><div className="font-bold">{formatYen(charge.totalBilledYen)}</div></div>
@@ -1645,6 +1655,7 @@ function ContractList({ contracts }: { contracts: ContractRecord[] }) {
             <div>
               <div className="font-bold">{contract.tenantName ?? contract.tenantId}</div>
               <div className="text-sm text-slate-600">{contract.propertyName} {contract.roomNumber}</div>
+              {contract.renewalDate ? <div className="text-xs text-slate-500">次回更新日: {formatDate(contract.renewalDate)} / 更新関連 {formatYen((contract.renewalFeeYen ?? 0) + (contract.renewalAdminFeeYen ?? 0))}</div> : null}
             </div>
             <div className="font-bold">{formatYen(contract.rentYen + contract.commonFeeYen + contract.managementFeeYen + contract.parkingFeeYen + contract.otherMonthlyFeeYen)}</div>
             <span className="badge badge-ok">{contract.status}</span>

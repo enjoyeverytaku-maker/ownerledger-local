@@ -1,5 +1,6 @@
 import type { AllocationCandidate, AllocationRecord, ContractRecord, DashboardSummary, DepositTransactionRecord, DocumentRecord, ExpenseRecord, MonthlyChargeRecord, OwnerLedgerApi, PaymentCsvRow, PaymentRecord, PropertyRecord, RepairRecord, SetupPayload, SpotChargeRecord, TenantRecord, UnitRecord } from "../types";
 import { currentMonth } from "../lib/format";
+import { calculateProratedMonthlyCharge, isRenewalMonth } from "../lib/business";
 
 const key = "ownerledger-local-browser-data";
 
@@ -146,28 +147,49 @@ export const browserApi: OwnerLedgerApi = {
     let skipped = 0;
     const charges = [...store.charges];
     for (const contract of store.contracts) {
+      if (!["契約中", "退去予定"].includes(String(contract.status))) {
+        skipped += 1;
+        continue;
+      }
       if (charges.some((charge) => charge.contractId === contract.id && charge.targetMonth === targetMonth)) {
         skipped += 1;
         continue;
       }
-      const total = contract.rentYen + contract.commonFeeYen + contract.managementFeeYen + contract.parkingFeeYen + contract.otherMonthlyFeeYen;
+      const prorated = calculateProratedMonthlyCharge({
+        targetMonth,
+        startDate: contract.startDate,
+        endDate: contract.endDate,
+        rentYen: contract.rentYen,
+        commonFeeYen: contract.commonFeeYen,
+        managementFeeYen: contract.managementFeeYen,
+        parkingFeeYen: contract.parkingFeeYen,
+        otherMonthlyFeeYen: contract.otherMonthlyFeeYen
+      });
+      if (!prorated) {
+        skipped += 1;
+        continue;
+      }
+      const renewalAmountYen = isRenewalMonth(targetMonth, contract.renewalDate) ? (contract.renewalFeeYen ?? 0) + (contract.renewalAdminFeeYen ?? 0) : 0;
+      const memo = [prorated.memo, renewalAmountYen > 0 ? `更新料・更新事務手数料を含む: ${renewalAmountYen.toLocaleString("ja-JP")}円` : null].filter(Boolean).join(" / ") || null;
+      const chargeId = id("charge");
       charges.push({
-        id: id("charge"),
+        id: chargeId,
         targetMonth,
         contractId: contract.id,
         tenantName: store.tenants.find((item) => item.id === contract.tenantId)?.displayName,
         propertyName: store.properties.find((item) => item.id === contract.propertyId)?.name,
         roomNumber: store.units.find((item) => item.id === contract.unitId)?.roomNumber,
-        rentYen: contract.rentYen,
-        commonFeeYen: contract.commonFeeYen,
-        managementFeeYen: contract.managementFeeYen,
-        parkingFeeYen: contract.parkingFeeYen,
-        otherMonthlyFeeYen: contract.otherMonthlyFeeYen,
-        spotChargeTotalYen: 0,
-        totalBilledYen: total,
+        rentYen: prorated.rentYen,
+        commonFeeYen: prorated.commonFeeYen,
+        managementFeeYen: prorated.managementFeeYen,
+        parkingFeeYen: prorated.parkingFeeYen,
+        otherMonthlyFeeYen: prorated.otherMonthlyFeeYen,
+        spotChargeTotalYen: renewalAmountYen,
+        totalBilledYen: prorated.totalBilledYen + renewalAmountYen,
         paidYen: 0,
-        unpaidYen: total,
-        status: "請求済"
+        unpaidYen: prorated.totalBilledYen + renewalAmountYen,
+        status: "請求済",
+        memo
       });
       created += 1;
     }

@@ -155,6 +155,57 @@ function monthDate(targetMonth, day) {
   return new Date(year, month - 1, Math.min(day, 28));
 }
 
+function localDate(value) {
+  const dateText = value instanceof Date ? value.toISOString().slice(0, 10) : String(value || "").slice(0, 10);
+  const [year, month, day] = dateText.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function daysInTargetMonth(targetMonth) {
+  const [year, month] = targetMonth.split("-").map(Number);
+  return new Date(year, month, 0).getDate();
+}
+
+function prorateAmount(amountYen, billableDays, daysInMonth) {
+  return Math.round((amountYen * billableDays) / daysInMonth);
+}
+
+function calculateProratedMonthlyCharge(input) {
+  const [year, month] = input.targetMonth.split("-").map(Number);
+  const daysInMonth = daysInTargetMonth(input.targetMonth);
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month - 1, daysInMonth);
+  const startDate = localDate(input.startDate);
+  const endDate = input.endDate ? localDate(input.endDate) : null;
+  const billStart = startDate > monthStart ? startDate : monthStart;
+  const billEnd = endDate && endDate < monthEnd ? endDate : monthEnd;
+  if (billStart > billEnd) return null;
+  const billableDays = Math.floor((billEnd.getTime() - billStart.getTime()) / 86400000) + 1;
+  const rentYen = prorateAmount(input.rentYen, billableDays, daysInMonth);
+  const commonFeeYen = prorateAmount(input.commonFeeYen, billableDays, daysInMonth);
+  const managementFeeYen = prorateAmount(input.managementFeeYen, billableDays, daysInMonth);
+  const parkingFeeYen = prorateAmount(input.parkingFeeYen, billableDays, daysInMonth);
+  const otherMonthlyFeeYen = prorateAmount(input.otherMonthlyFeeYen, billableDays, daysInMonth);
+  return {
+    rentYen,
+    commonFeeYen,
+    managementFeeYen,
+    parkingFeeYen,
+    otherMonthlyFeeYen,
+    totalBilledYen: rentYen + commonFeeYen + managementFeeYen + parkingFeeYen + otherMonthlyFeeYen,
+    memo: billableDays !== daysInMonth ? `日割り計算: ${dateKey(billStart)}から${dateKey(billEnd)}まで ${billableDays}/${daysInMonth}日` : null
+  };
+}
+
+function isRenewalMonth(targetMonth, renewalDate) {
+  const dateText = renewalDate instanceof Date ? renewalDate.toISOString().slice(0, 7) : String(renewalDate || "").slice(0, 7);
+  return Boolean(dateText && dateText === targetMonth);
+}
+
 function paymentDuplicateKey(input) {
   const paidAt = new Date(input.paidAt).toISOString().slice(0, 10);
   const payer = String(input.payerName || "").trim().replace(/\s+/g, "");
@@ -467,14 +518,21 @@ ipcMain.handle("contracts:list", async () => {
   return serialize(contracts.map((contract) => ({ ...contract, propertyName: contract.property.name, roomNumber: contract.unit.roomNumber, tenantName: contract.tenant.displayName })));
 });
 ipcMain.handle("contracts:create", async (_event, input) => {
-  const contract = await prisma.contract.create({ data: { ...input, startDate: new Date(input.startDate), endDate: input.endDate ? new Date(input.endDate) : null } });
+  const contract = await prisma.contract.create({
+    data: {
+      ...input,
+      startDate: new Date(input.startDate),
+      endDate: input.endDate ? new Date(input.endDate) : null,
+      renewalDate: input.renewalDate ? new Date(input.renewalDate) : null
+    }
+  });
   await prisma.unit.update({ where: { id: input.unitId }, data: { status: "入居中", currentRentYen: input.rentYen } });
   await audit("契約作成", "Contract", contract.id, null, contract, "契約を登録しました。");
   return serialize(contract);
 });
 
 ipcMain.handle("charges:generateMonthly", async (_event, targetMonth) => {
-  const contracts = await prisma.contract.findMany({ where: { status: "契約中", archivedAt: null } });
+  const contracts = await prisma.contract.findMany({ where: { status: { in: ["契約中", "退去予定"] }, archivedAt: null } });
   let created = 0;
   let skipped = 0;
   for (const contract of contracts) {
@@ -483,20 +541,37 @@ ipcMain.handle("charges:generateMonthly", async (_event, targetMonth) => {
       skipped += 1;
       continue;
     }
-    const total = contract.rentYen + contract.commonFeeYen + contract.managementFeeYen + contract.parkingFeeYen + contract.otherMonthlyFeeYen;
+    const prorated = calculateProratedMonthlyCharge({
+      targetMonth,
+      startDate: contract.startDate,
+      endDate: contract.endDate,
+      rentYen: contract.rentYen,
+      commonFeeYen: contract.commonFeeYen,
+      managementFeeYen: contract.managementFeeYen,
+      parkingFeeYen: contract.parkingFeeYen,
+      otherMonthlyFeeYen: contract.otherMonthlyFeeYen
+    });
+    if (!prorated) {
+      skipped += 1;
+      continue;
+    }
+    const renewalAmountYen = isRenewalMonth(targetMonth, contract.renewalDate) ? contract.renewalFeeYen + contract.renewalAdminFeeYen : 0;
+    const memo = [prorated.memo, renewalAmountYen > 0 ? `更新料・更新事務手数料を含む: ${renewalAmountYen.toLocaleString("ja-JP")}円` : null].filter(Boolean).join(" / ") || null;
     const charge = await prisma.monthlyCharge.create({
       data: {
         targetMonth,
         contractId: contract.id,
-        rentYen: contract.rentYen,
-        commonFeeYen: contract.commonFeeYen,
-        managementFeeYen: contract.managementFeeYen,
-        parkingFeeYen: contract.parkingFeeYen,
-        otherMonthlyFeeYen: contract.otherMonthlyFeeYen,
-        totalBilledYen: total,
-        unpaidYen: total,
+        rentYen: prorated.rentYen,
+        commonFeeYen: prorated.commonFeeYen,
+        managementFeeYen: prorated.managementFeeYen,
+        parkingFeeYen: prorated.parkingFeeYen,
+        otherMonthlyFeeYen: prorated.otherMonthlyFeeYen,
+        spotChargeTotalYen: renewalAmountYen,
+        totalBilledYen: prorated.totalBilledYen + renewalAmountYen,
+        unpaidYen: prorated.totalBilledYen + renewalAmountYen,
         dueDate: monthDate(targetMonth, contract.paymentDueDay),
-        fixedAt: new Date()
+        fixedAt: new Date(),
+        memo
       }
     });
     await audit("請求作成", "MonthlyCharge", charge.id, null, charge, `${targetMonth}の月次請求を生成しました。`);

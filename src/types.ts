@@ -55,6 +55,7 @@ export interface ContractRecord {
   tenantName?: string;
   startDate: string;
   endDate?: string | null;
+  renewalDate?: string | null;
   rentYen: number;
   commonFeeYen: number;
   managementFeeYen: number;
@@ -63,6 +64,8 @@ export interface ContractRecord {
   securityDepositYen: number;
   keyMoneyYen: number;
   guaranteeDepositYen: number;
+  renewalFeeYen: number;
+  renewalAdminFeeYen: number;
   paymentDueDay: number;
   paymentMethod: string;
   status: ContractStatus | string;
@@ -87,6 +90,7 @@ export interface MonthlyChargeRecord {
   unpaidYen: number;
   status: ChargeStatus | string;
   dueDate?: string | null;
+  memo?: string | null;
 }
 
 export interface SpotChargeRecord {
