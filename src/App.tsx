@@ -1,4 +1,4 @@
-import { Archive, Building2, ChevronRight, DatabaseBackup, FileText, Home, Landmark, ReceiptText, Save, Search, ShieldCheck, Users } from "lucide-react";
+import { Archive, Building2, ChevronRight, DatabaseBackup, FileText, Home, ReceiptText, Save, Search, ShieldCheck, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import Papa from "papaparse";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -16,7 +16,6 @@ const navItems = [
   { key: "入居者", icon: Users },
   { key: "家賃・入金", icon: ReceiptText },
   { key: "支出", icon: FileText },
-  { key: "敷金", icon: Landmark },
   { key: "退去", icon: ShieldCheck },
   { key: "書類", icon: FileText },
   { key: "レポート", icon: FileText },
@@ -134,7 +133,6 @@ function App() {
           {screen === "入居者" && <MasterDataPage kind="tenant" onMessage={setMessage} />}
           {screen === "家賃・入金" && <RentPage onMessage={setMessage} />}
           {screen === "支出" && <ExpensePage onMessage={setMessage} />}
-          {screen === "敷金" && <DepositPage onMessage={setMessage} />}
           {screen === "退去" && <MoveOutPage onMessage={setMessage} />}
           {screen === "書類" && <DocumentPage onMessage={setMessage} />}
           {screen === "レポート" && <ReportPage onMessage={setMessage} />}
@@ -1088,6 +1086,7 @@ function MoveOutPage({ onMessage }: { onMessage: (message: string) => void }) {
   const [contracts, setContracts] = useState<ContractRecord[]>([]);
   const [deposits, setDeposits] = useState<DepositTransactionRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showAdjustment, setShowAdjustment] = useState(false);
   const reload = useCallback(async () => {
     const [contractList, depositList] = await Promise.all([api.listContracts(), api.listDepositTransactions()]);
     setContracts(contractList);
@@ -1125,11 +1124,36 @@ function MoveOutPage({ onMessage }: { onMessage: (message: string) => void }) {
     onMessage("敷金・預り金の取引を取り消しました。");
     await reload();
   };
+  const submitAdjustment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      const input = depositTransactionSchema.parse({
+        contractId: textInput(form.get("contractId")),
+        transactedAt: textInput(form.get("transactedAt")),
+        depositType: textInput(form.get("depositType")),
+        transactionType: textInput(form.get("transactionType")),
+        amountYen: yenInput(form.get("amountYen")),
+        description: textInput(form.get("description")),
+        memo: textInput(form.get("memo"))
+      });
+      await api.createDepositTransaction(input);
+      event.currentTarget.reset();
+      onMessage("敷金・保証金の個別調整を登録しました。");
+      await reload();
+    } catch (caught) {
+      setError(caught instanceof z.ZodError ? friendlyZodError(caught) : caught instanceof Error ? caught.message : "個別調整を保存できませんでした。");
+    }
+  };
+  const depositBalance = deposits.filter((item) => item.status === "有効").reduce((sum, item) => item.transactionType === "預り" || item.transactionType === "修正" ? sum + item.amountYen : sum - item.amountYen, 0);
   return (
     <div className="grid gap-6">
       <div className="card p-5">
         <h2 className="text-xl font-bold">退去精算</h2>
         <p className="mt-1 text-slate-600">退去時の控除、返金、追加請求をまとめて登録します。保存すると契約は終了し、部屋は空室になります。</p>
+        <div className="mt-4 text-3xl font-bold">{formatYen(depositBalance)}</div>
+        <p className="mt-1 text-sm text-slate-600">敷金・保証金の現在残高です。</p>
       </div>
       <div className="grid grid-cols-[420px_1fr] gap-6">
         <form className="card grid gap-4 p-5" onSubmit={(event) => void settleMoveOut(event)}>
@@ -1149,71 +1173,26 @@ function MoveOutPage({ onMessage }: { onMessage: (message: string) => void }) {
         </form>
         <DepositList deposits={deposits} onCancel={(deposit) => void cancel(deposit)} />
       </div>
-    </div>
-  );
-}
-
-function DepositPage({ onMessage }: { onMessage: (message: string) => void }) {
-  const [contracts, setContracts] = useState<ContractRecord[]>([]);
-  const [deposits, setDeposits] = useState<DepositTransactionRecord[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const reload = useCallback(async () => {
-    const [contractList, depositList] = await Promise.all([api.listContracts(), api.listDepositTransactions()]);
-    setContracts(contractList);
-    setDeposits(depositList);
-  }, []);
-  useEffect(() => { void reload(); }, [reload]);
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    const form = new FormData(event.currentTarget);
-    try {
-      const input = depositTransactionSchema.parse({
-        contractId: textInput(form.get("contractId")),
-        transactedAt: textInput(form.get("transactedAt")),
-        depositType: textInput(form.get("depositType")),
-        transactionType: textInput(form.get("transactionType")),
-        amountYen: yenInput(form.get("amountYen")),
-        description: textInput(form.get("description")),
-        memo: textInput(form.get("memo"))
-      });
-      await api.createDepositTransaction(input);
-      event.currentTarget.reset();
-      onMessage("敷金・預り金の取引を登録しました。家賃収入とは分けて管理しています。");
-      await reload();
-    } catch (caught) {
-      setError(caught instanceof z.ZodError ? friendlyZodError(caught) : caught instanceof Error ? caught.message : "敷金取引を保存できませんでした。");
-    }
-  };
-  const cancel = async (deposit: DepositTransactionRecord) => {
-    if (!window.confirm("この敷金・預り金の取引を取り消します。残高の確認が必要です。よろしいですか？")) return;
-    await api.cancelDepositTransaction(deposit.id);
-    onMessage("敷金・預り金の取引を取り消しました。");
-    await reload();
-  };
-  const balance = deposits.filter((item) => item.status === "有効").reduce((sum, item) => item.transactionType === "預り" || item.transactionType === "修正" ? sum + item.amountYen : sum - item.amountYen, 0);
-  return (
-    <div className="grid gap-6">
       <div className="card p-5">
-        <h2 className="text-xl font-bold">敷金・預り金</h2>
-        <p className="mt-1 text-slate-600">契約登録時の敷金・保証金は預り金として残高管理し、礼金は返還しない請求として分けて管理します。</p>
-        <div className="mt-4 text-3xl font-bold">{formatYen(balance)}</div>
-      </div>
-      <div className="grid grid-cols-[420px_1fr] gap-6">
-        <form className="card grid gap-4 p-5" onSubmit={(event) => void submit(event)}>
-          <h2 className="text-xl font-bold">個別取引を登録する</h2>
-          <p className="text-sm text-slate-600">契約登録時の敷金・保証金は自動で作成されます。調整が必要なときだけ使います。</p>
-          {error ? <div className="rounded-lg bg-red-50 p-3 font-bold text-red-800">{error}</div> : null}
-          <FormSelect name="contractId" label="契約" options={contracts.map((item) => ({ label: `${item.tenantName} / ${item.propertyName} ${item.roomNumber}`, value: item.id }))} />
-          <FormInput name="transactedAt" label="取引日" required type="date" />
-          <FormSelect name="depositType" label="種類" options={["敷金", "保証金", "預り金", "退去精算預り", "その他預り金"]} />
-          <FormSelect name="transactionType" label="取引種別" options={["預り", "控除", "返金", "振替", "修正"]} />
-          <FormInput name="amountYen" label="金額" required placeholder="例：78000" />
-          <FormInput name="description" label="内容" required placeholder="例：契約時敷金の預り" />
-          <FormInput name="memo" label="メモ" placeholder="補足" />
-          <button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />取引を保存する</button>
-        </form>
-        <DepositList deposits={deposits} onCancel={(deposit) => void cancel(deposit)} />
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold">敷金・保証金の個別調整</h2>
+            <p className="mt-1 text-sm text-slate-600">通常は入居者登録と退去精算で自動管理します。残高修正が必要な場合だけ使います。</p>
+          </div>
+          <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-bold" onClick={() => setShowAdjustment((value) => !value)}>{showAdjustment ? "閉じる" : "個別調整を開く"}</button>
+        </div>
+        {showAdjustment ? (
+          <form className="mt-5 grid grid-cols-4 gap-4" onSubmit={(event) => void submitAdjustment(event)}>
+            <FormSelect name="contractId" label="契約" options={contracts.map((item) => ({ label: `${item.tenantName} / ${item.propertyName} ${item.roomNumber}`, value: item.id }))} />
+            <FormInput name="transactedAt" label="取引日" required type="date" defaultValue={todayText()} />
+            <FormSelect name="depositType" label="種類" options={["敷金", "保証金", "預り金", "退去精算預り", "その他預り金"]} />
+            <FormSelect name="transactionType" label="取引種別" options={["預り", "控除", "返金", "振替", "修正"]} />
+            <FormInput name="amountYen" label="金額" required placeholder="例：78000" />
+            <FormInput name="description" label="内容" required placeholder="例：残高調整" />
+            <FormInput name="memo" label="メモ" placeholder="補足" />
+            <div className="flex items-end"><button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />保存する</button></div>
+          </form>
+        ) : null}
       </div>
     </div>
   );
