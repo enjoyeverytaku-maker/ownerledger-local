@@ -32,7 +32,7 @@ html[data-font-size="extra-large"] {
 body {
   margin: 0;
   background:
-    linear-gradient(180deg, #ffffff 0%, #f5f8fb 58%, #eef5f4 100%);
+    linear-gradient(180deg, #ffffff 0%, #f6f9fb 48%, #eef6f4 100%);
   color: hsl(var(--foreground));
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -84,11 +84,13 @@ textarea:focus-visible {
   top: 0;
   height: 100vh;
   overflow-y: auto;
-  background: rgba(255, 255, 255, 0.92);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 252, 251, 0.92)),
+    #ffffff;
   border-right: 1px solid hsl(var(--border));
   color: hsl(var(--foreground));
   padding: 24px 16px;
-  box-shadow: 10px 0 30px rgb(15 23 42 / 0.04);
+  box-shadow: 14px 0 34px rgb(15 23 42 / 0.05);
   backdrop-filter: blur(18px);
 }
 
@@ -96,7 +98,13 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 8px 24px;
+  margin: 0 0 18px;
+  border: 1px solid #e1ebe9;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(236, 253, 249, 0.9), rgba(255, 255, 255, 0.96));
+  padding: 12px;
+  box-shadow: 0 14px 28px rgb(15 23 42 / 0.05);
 }
 
 .brand-mark {
@@ -104,8 +112,8 @@ textarea:focus-visible {
   place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 12px;
-  background: #0f766e;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #0f766e, #155e75);
   color: white;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
@@ -117,6 +125,7 @@ textarea:focus-visible {
   font-weight: 900;
   letter-spacing: 0;
   line-height: 1.1;
+  color: #111827;
 }
 
 .brand-subtitle {
@@ -128,7 +137,7 @@ textarea:focus-visible {
 
 .nav-list {
   display: grid;
-  gap: 6px;
+  gap: 7px;
 }
 
 .nav-item {
@@ -148,13 +157,15 @@ textarea:focus-visible {
 }
 
 .nav-item:hover {
-  background: #f3f7f8;
+  background: #f7fbfb;
+  border-color: #dce9e7;
   color: #102a33;
+  box-shadow: 0 10px 20px rgb(15 23 42 / 0.04);
 }
 
 .nav-item-active {
-  background: #ecfdf9;
-  border-color: #b8ece4;
+  background: linear-gradient(135deg, #ecfdf9, #ffffff);
+  border-color: #a8e5dc;
   color: #0f625b;
   box-shadow: inset 3px 0 0 #0f766e;
 }
@@ -168,9 +179,9 @@ textarea:focus-visible {
 
 .topbar {
   min-height: 78px;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(14px);
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid rgba(202, 214, 226, 0.78);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -185,6 +196,16 @@ textarea:focus-visible {
   color: #172033;
   letter-spacing: 0;
   line-height: 1.15;
+}
+
+.topbar h1::after {
+  content: "";
+  display: block;
+  width: 34px;
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: #0f766e;
 }
 
 .topbar-actions {
@@ -251,10 +272,27 @@ textarea:focus-visible {
 }
 
 .card {
-  background: hsl(var(--surface));
-  border: 1px solid hsl(var(--border));
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(252, 254, 254, 0.96));
+  border: 1px solid rgba(205, 218, 229, 0.82);
   border-radius: 8px;
-  box-shadow: 0 16px 40px rgb(15 23 42 / 0.06);
+  box-shadow: 0 18px 44px rgb(15 23 42 / 0.07);
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(90deg, rgba(15, 118, 110, 0.72), rgba(37, 99, 235, 0.24), transparent);
+  pointer-events: none;
+}
+
+.card:hover {
+  border-color: rgba(148, 163, 184, 0.55);
+  box-shadow: 0 22px 52px rgb(15 23 42 / 0.09);
 }
 
 .field {
@@ -271,10 +309,10 @@ textarea:focus-visible {
 .field select,
 .field textarea {
   width: 100%;
-  border: 1px solid #d2dce6;
+  border: 1px solid #cfdae5;
   border-radius: 8px;
   padding: 11px 12px;
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff, #fbfdfe);
   color: #162333;
   font-family: var(--font-sans);
   min-height: 44px;
@@ -305,7 +343,7 @@ button.border {
 .btn-primary,
 button.bg-primary {
   border: 1px solid #0f766e;
-  background: #0f766e;
+  background: linear-gradient(135deg, #0f766e, #115e59);
   color: white;
   box-shadow: 0 12px 24px rgba(15, 118, 110, 0.18);
 }
@@ -319,7 +357,7 @@ button.bg-primary:hover:not(:disabled) {
 button.border,
 .btn-secondary {
   border-color: #d2dce6;
-  background: white;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
   color: #1f2937;
   box-shadow: 0 8px 18px rgb(15 23 42 / 0.04);
 }
@@ -366,7 +404,8 @@ button:disabled {
 
 .empty-state {
   border: 1px dashed #cbd5e1;
-  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  background:
+    linear-gradient(180deg, #ffffff, #f8fafc);
   border-radius: 8px;
   padding: 34px 24px;
   text-align: center;
@@ -382,8 +421,9 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  border: 1px solid #cfdce6;
-  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(186, 202, 214, 0.9);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(241, 250, 248, 0.94));
   backdrop-filter: blur(16px);
   border-radius: 8px;
   padding: 14px 16px;
