@@ -1228,31 +1228,53 @@ ipcMain.handle("reports:exportTaxCsv", async (_event, targetYear) => {
   if (output.canceled || !output.filePath) throw new Error("保存先が選ばれていません。");
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year + 1, 0, 1);
-  const [charges, expenses, deposits, documents] = await Promise.all([
+  const [charges, spotCharges, spotAllocations, expenses, deposits, documents] = await Promise.all([
     prisma.monthlyCharge.findMany({
       where: { targetMonth: { gte: `${year}-01`, lte: `${year}-12` }, archivedAt: null },
       include: { contract: { include: { tenant: true, property: true, unit: true } } }
+    }),
+    prisma.spotCharge.findMany({
+      where: { billedAt: { gte: yearStart, lt: yearEnd }, archivedAt: null, status: { not: "取消" } },
+      include: { contract: { include: { tenant: true, property: true, unit: true } } }
+    }),
+    prisma.allocation.findMany({
+      where: { allocatedAt: { gte: yearStart, lt: yearEnd }, archivedAt: null, status: "有効", spotChargeId: { not: null } }
     }),
     prisma.expense.findMany({
       where: { spentAt: { gte: yearStart, lt: yearEnd }, archivedAt: null, status: { not: "取消" } },
       include: { property: true, unit: true, documents: true }
     }),
-    prisma.depositTransaction.findMany({ where: { archivedAt: null, status: "有効" }, include: { contract: { include: { tenant: true, property: true, unit: true } } } }),
+    prisma.depositTransaction.findMany({
+      where: { transactedAt: { gte: yearStart, lt: yearEnd }, archivedAt: null, status: "有効" },
+      include: { contract: { include: { tenant: true, property: true, unit: true } } }
+    }),
     prisma.document.findMany({
-      where: { archivedAt: null },
+      where: {
+        archivedAt: null,
+        OR: [
+          { receivedAt: { gte: yearStart, lt: yearEnd } },
+          { issuedAt: { gte: yearStart, lt: yearEnd } }
+        ]
+      },
       include: { property: true, unit: true, contract: { include: { tenant: true, property: true, unit: true } }, expense: { include: { property: true, unit: true } } }
     })
   ]);
   const headers = [
-    "種類",
-    "日付",
+    "No",
+    "大分類",
+    "取引日",
     "対象年月",
-    "物件",
-    "部屋",
-    "相手先",
+    "物件名",
+    "部屋番号",
     "入居者",
-    "区分",
+    "取引先",
+    "取引内容",
     "勘定科目候補",
+    "税区分",
+    "入金額",
+    "支出額",
+    "預り金増加",
+    "預り金減少",
     "家賃",
     "共益費",
     "管理費",
@@ -1260,28 +1282,28 @@ ipcMain.handle("reports:exportTaxCsv", async (_event, targetYear) => {
     "その他月額",
     "更新料等",
     "請求合計",
-    "入金済額",
     "未入金額",
-    "支出額",
-    "預り金増減",
-    "税区分",
     "支払入金方法",
-    "証憑",
+    "証憑有無",
     "証憑ファイル名",
     "ステータス",
     "メモ"
   ];
-  const rows = [
+  const baseRow = () => Object.fromEntries(headers.map((header) => [header, ""]));
+  const detailRows = [
     ...charges.map((item) => ({
-      種類: "年間収入",
-      日付: item.dueDate?.toISOString().slice(0, 10) || item.targetMonth,
+      ...baseRow(),
+      大分類: "収入",
+      取引日: item.dueDate?.toISOString().slice(0, 10) || item.targetMonth,
       対象年月: item.targetMonth,
-      物件: item.contract.property.name,
-      部屋: item.contract.unit.roomNumber,
-      相手先: item.contract.tenant.displayName,
+      物件名: item.contract.property.name,
+      部屋番号: item.contract.unit.roomNumber,
       入居者: item.contract.tenant.displayName,
-      区分: "家賃・共益費等",
+      取引先: item.contract.tenant.displayName,
+      取引内容: "月次請求",
       勘定科目候補: "賃貸料収入",
+      税区分: "税理士確認",
+      入金額: item.paidYen,
       家賃: item.rentYen,
       共益費: item.commonFeeYen,
       管理費: item.managementFeeYen,
@@ -1289,102 +1311,93 @@ ipcMain.handle("reports:exportTaxCsv", async (_event, targetYear) => {
       その他月額: item.otherMonthlyFeeYen,
       更新料等: item.spotChargeTotalYen,
       請求合計: item.totalBilledYen,
-      入金済額: item.paidYen,
       未入金額: item.unpaidYen,
-      支出額: "",
-      預り金増減: "",
-      税区分: "税理士確認",
       支払入金方法: item.contract.paymentMethod,
-      証憑: "",
-      証憑ファイル名: "",
       ステータス: item.status,
       メモ: item.memo || "税務上の取扱いは税理士に確認してください"
     })),
+    ...spotCharges.map((item) => {
+      const paidYen = spotAllocations.filter((allocation) => allocation.spotChargeId === item.id).reduce((sum, allocation) => sum + allocation.amountYen, 0);
+      const unpaidYen = Math.max(0, item.amountYen - paidYen);
+      return {
+        ...baseRow(),
+        大分類: "収入",
+        取引日: item.billedAt.toISOString().slice(0, 10),
+        対象年月: item.billedAt.toISOString().slice(0, 7),
+        物件名: item.contract.property.name,
+        部屋番号: item.contract.unit.roomNumber,
+        入居者: item.contract.tenant.displayName,
+        取引先: item.contract.tenant.displayName,
+        取引内容: item.chargeType,
+        勘定科目候補: item.chargeType === "礼金" ? "礼金収入" : "雑収入",
+        税区分: item.taxType,
+        入金額: paidYen,
+        更新料等: item.amountYen,
+        請求合計: item.amountYen,
+        未入金額: unpaidYen,
+        証憑有無: "",
+        ステータス: item.paidStatus,
+        メモ: item.description || item.memo || ""
+      };
+    }),
     ...expenses.map((item) => ({
-      種類: "年間支出",
-      日付: item.spentAt.toISOString().slice(0, 10),
+      ...baseRow(),
+      大分類: "支出",
+      取引日: item.spentAt.toISOString().slice(0, 10),
       対象年月: item.spentAt.toISOString().slice(0, 7),
-      物件: item.property?.name || "",
-      部屋: item.unit?.roomNumber || "",
-      相手先: item.payee,
-      入居者: "",
-      区分: item.category,
+      物件名: item.property?.name || "",
+      部屋番号: item.unit?.roomNumber || "",
+      取引先: item.payee,
+      取引内容: item.category,
       勘定科目候補: item.taxReturnCategory || item.category,
-      家賃: "",
-      共益費: "",
-      管理費: "",
-      駐車場代: "",
-      その他月額: "",
-      更新料等: "",
-      請求合計: "",
-      入金済額: "",
-      未入金額: "",
-      支出額: item.amountYen,
-      預り金増減: "",
       税区分: item.taxType,
+      支出額: item.amountYen,
       支払入金方法: item.paymentMethod,
-      証憑: item.hasReceipt ? "あり" : "未添付",
+      証憑有無: item.hasReceipt ? "あり" : "未添付",
       証憑ファイル名: item.documents.map((document) => document.originalFileName).join(" / "),
       ステータス: item.status,
       メモ: item.accountingMemo || item.memo || ""
     })),
-    ...deposits.map((item) => ({
-      種類: "敷金・預り金",
-      日付: item.transactedAt.toISOString().slice(0, 10),
-      対象年月: item.transactedAt.toISOString().slice(0, 7),
-      物件: item.contract.property.name,
-      部屋: item.contract.unit.roomNumber,
-      相手先: item.contract.tenant.displayName,
-      入居者: item.contract.tenant.displayName,
-      区分: `${item.depositType}/${item.transactionType}`,
-      勘定科目候補: "預り金",
-      家賃: "",
-      共益費: "",
-      管理費: "",
-      駐車場代: "",
-      その他月額: "",
-      更新料等: "",
-      請求合計: "",
-      入金済額: "",
-      未入金額: "",
-      支出額: "",
-      預り金増減: item.transactionType === "返還" ? -item.amountYen : item.amountYen,
-      税区分: "対象外",
-      支払入金方法: "",
-      証憑: "",
-      証憑ファイル名: "",
-      ステータス: item.status,
-      メモ: `${item.description} / 収益とは分けて管理`
-    })),
+    ...deposits.map((item) => {
+      const isIncrease = item.transactionType === "預り" || item.transactionType === "修正";
+      return {
+        ...baseRow(),
+        大分類: "預り金",
+        取引日: item.transactedAt.toISOString().slice(0, 10),
+        対象年月: item.transactedAt.toISOString().slice(0, 7),
+        物件名: item.contract.property.name,
+        部屋番号: item.contract.unit.roomNumber,
+        入居者: item.contract.tenant.displayName,
+        取引先: item.contract.tenant.displayName,
+        取引内容: `${item.depositType}/${item.transactionType}`,
+        勘定科目候補: "預り金",
+        税区分: "対象外",
+        預り金増加: isIncrease ? item.amountYen : "",
+        預り金減少: isIncrease ? "" : item.amountYen,
+        ステータス: item.status,
+        メモ: `${item.description} / 収益とは分けて管理`
+      };
+    }),
     ...documents.map((item) => ({
-      種類: "証憑一覧",
-      日付: item.receivedAt?.toISOString().slice(0, 10) || item.issuedAt?.toISOString().slice(0, 10) || "",
+      ...baseRow(),
+      大分類: "証憑",
+      取引日: item.receivedAt?.toISOString().slice(0, 10) || item.issuedAt?.toISOString().slice(0, 10) || "",
       対象年月: item.receivedAt?.toISOString().slice(0, 7) || item.issuedAt?.toISOString().slice(0, 7) || "",
-      物件: item.property?.name || item.unit?.property?.name || item.contract?.property.name || item.expense?.property?.name || "",
-      部屋: item.unit?.roomNumber || item.contract?.unit.roomNumber || item.expense?.unit?.roomNumber || "",
-      相手先: item.counterparty || "",
+      物件名: item.property?.name || item.unit?.property?.name || item.contract?.property.name || item.expense?.property?.name || "",
+      部屋番号: item.unit?.roomNumber || item.contract?.unit.roomNumber || item.expense?.unit?.roomNumber || "",
       入居者: item.contract?.tenant.displayName || "",
-      区分: item.documentType,
-      勘定科目候補: "",
-      家賃: "",
-      共益費: "",
-      管理費: "",
-      駐車場代: "",
-      その他月額: "",
-      更新料等: "",
-      請求合計: "",
-      入金済額: "",
-      未入金額: "",
+      取引先: item.counterparty || "",
+      取引内容: item.documentType,
       支出額: item.expense ? item.expense.amountYen : "",
-      預り金増減: "",
-      税区分: "",
-      支払入金方法: "",
-      証憑: "あり",
+      証憑有無: "あり",
       証憑ファイル名: item.originalFileName,
       ステータス: item.status,
       メモ: item.displayName
     }))
   ];
+  const rows = detailRows
+    .sort((a, b) => String(a["取引日"]).localeCompare(String(b["取引日"])) || String(a["大分類"]).localeCompare(String(b["大分類"])))
+    .map((row, index) => ({ ...row, No: index + 1 }));
   const csv = "\uFEFF" + toCsv(headers, rows);
   fs.writeFileSync(output.filePath, csv, "utf8");
   await audit("データ一括出力", "Report", String(year), null, { outputPath: output.filePath, rowCount: rows.length }, "税理士提出用CSVを出力しました。");
