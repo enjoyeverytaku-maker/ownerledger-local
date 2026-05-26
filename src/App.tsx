@@ -49,6 +49,19 @@ function textInput(value: FormDataEntryValue | null): string {
   return String(value ?? "").trim();
 }
 
+function inferExpenseTaxType(category: string): string {
+  if (["固定資産税", "都市計画税", "火災保険料", "地震保険料", "ローン利息", "ローン元金"].includes(category)) return "対象外";
+  if (["管理委託料", "修繕費", "原状回復費", "清掃費", "広告費", "仲介手数料", "税理士報酬", "司法書士報酬", "水道光熱費", "消耗品費", "通信費"].includes(category)) return "課税";
+  return "税理士確認";
+}
+
+function inferSpotChargeTaxType(chargeType: string): string {
+  if (["更新料", "更新事務手数料", "礼金", "駐車場追加請求"].includes(chargeType)) return "税理士確認";
+  if (["鍵交換代", "原状回復費", "水道代精算", "退去精算"].includes(chargeType)) return "課税";
+  if (["違約金"].includes(chargeType)) return "対象外";
+  return "税理士確認";
+}
+
 function todayText(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -630,15 +643,16 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
     setError(null);
     const form = new FormData(event.currentTarget);
     try {
+      const chargeType = textInput(form.get("chargeType"));
       const input = spotChargeSchema.parse({
         contractId: textInput(form.get("contractId")),
         monthlyChargeId: textInput(form.get("monthlyChargeId")),
         billedAt: textInput(form.get("billedAt")),
         dueDate: textInput(form.get("dueDate")),
-        chargeType: textInput(form.get("chargeType")),
+        chargeType,
         description: textInput(form.get("description")),
         amountYen: yenInput(form.get("amountYen")),
-        taxType: textInput(form.get("taxType")),
+        taxType: inferSpotChargeTaxType(chargeType),
         memo: textInput(form.get("memo"))
       });
       await api.createSpotCharge(input);
@@ -749,7 +763,6 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
             <FormSelect name="chargeType" label="請求種別" options={spotChargeTypes} />
             <FormInput name="description" label="内容" required placeholder="例：契約更新料" />
             <FormInput name="amountYen" label="金額" required placeholder="例：78000" />
-            <FormSelect name="taxType" label="税区分" options={["課税", "非課税", "対象外", "不明"]} />
             <FormInput name="memo" label="メモ" placeholder="補足" />
             <button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />スポット請求を保存する</button>
           </form>
@@ -1005,14 +1018,15 @@ function ExpensePage({ onMessage }: { onMessage: (message: string) => void }) {
     setError(null);
     const form = new FormData(event.currentTarget);
     try {
+      const category = textInput(form.get("category"));
       const input = expenseSchema.parse({
         spentAt: textInput(form.get("spentAt")),
         payee: textInput(form.get("payee")),
         propertyId: textInput(form.get("propertyId")),
         unitId: textInput(form.get("unitId")),
-        category: textInput(form.get("category")),
+        category,
         amountYen: yenInput(form.get("amountYen")),
-        taxType: textInput(form.get("taxType")),
+        taxType: inferExpenseTaxType(category),
         paymentMethod: textInput(form.get("paymentMethod")),
         hasReceipt: form.get("hasReceipt") === "on",
         accountingMemo: textInput(form.get("accountingMemo")),
@@ -1069,7 +1083,6 @@ function ExpensePage({ onMessage }: { onMessage: (message: string) => void }) {
           <FormSelect name="unitId" label="部屋" options={[{ label: "選択しない", value: "" }, ...units.map((item) => ({ label: `${item.propertyName ?? ""} ${item.roomNumber}`, value: item.id }))]} />
           <FormSelect name="category" label="カテゴリ" options={expenseCategories} />
           <FormInput name="amountYen" label="金額" required placeholder="例：12000" />
-          <FormSelect name="taxType" label="税区分" options={["課税", "非課税", "対象外", "不明"]} />
           <FormSelect name="paymentMethod" label="支払方法" options={["振込", "口座振替", "現金", "クレジットカード", "その他"]} />
           <label className="flex items-center gap-2 font-bold"><input name="hasReceipt" type="checkbox" />領収書・請求書などの証明書類あり</label>
           <FormInput name="taxReturnCategory" label="確定申告用カテゴリ" placeholder="あとで入力できます" />
