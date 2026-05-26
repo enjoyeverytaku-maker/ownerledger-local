@@ -16,8 +16,8 @@ const navItems = [
   { key: "入居者", icon: Users },
   { key: "家賃・入金", icon: ReceiptText },
   { key: "支出", icon: FileText },
-  { key: "修繕", icon: ShieldCheck },
   { key: "敷金", icon: Landmark },
+  { key: "退去", icon: ShieldCheck },
   { key: "書類", icon: FileText },
   { key: "レポート", icon: FileText },
   { key: "バックアップ", icon: DatabaseBackup }
@@ -135,7 +135,7 @@ function App() {
           {screen === "家賃・入金" && <RentPage onMessage={setMessage} />}
           {screen === "支出" && <ExpensePage onMessage={setMessage} />}
           {screen === "敷金" && <DepositPage onMessage={setMessage} />}
-          {screen === "修繕" && <RepairPage onMessage={setMessage} />}
+          {screen === "退去" && <MoveOutPage onMessage={setMessage} />}
           {screen === "書類" && <DocumentPage onMessage={setMessage} />}
           {screen === "レポート" && <ReportPage onMessage={setMessage} />}
           {screen === "バックアップ" && <BackupPage onMessage={setMessage} />}
@@ -425,6 +425,10 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
         const propertyId = textInput(form.get("propertyId"));
         const roomNumber = textInput(form.get("roomNumber"));
         const rentYen = yenInput(form.get("rentYen"));
+        const commonFeeYen = yenInput(form.get("commonFeeYen"));
+        const managementFeeYen = yenInput(form.get("managementFeeYen"));
+        const parkingFeeYen = yenInput(form.get("parkingFeeYen"));
+        const otherMonthlyFeeYen = yenInput(form.get("otherMonthlyFeeYen"));
         const startDate = textInput(form.get("startDate")) || todayText();
         if (!propertyId) throw new Error("入居する物件を選んでください。");
         if (!roomNumber) throw new Error("部屋番号を入力してください。");
@@ -448,35 +452,36 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
           roomNumber,
           expectedRentYen: rentYen,
           currentRentYen: rentYen,
-          commonFeeYen: 0,
-          parkingFeeYen: 0,
-          otherMonthlyFeeYen: 0,
+          commonFeeYen,
+          parkingFeeYen,
+          otherMonthlyFeeYen,
           status: "入居中",
           memo: "入居者登録から作成"
         });
-        await api.createContract({
+        const contractInput = contractSchema.parse({
           propertyId,
           unitId: unit.id,
           tenantId: tenant.id,
           startDate,
-          endDate: "",
-          renewalDate: "",
+          endDate: textInput(form.get("endDate")),
+          renewalDate: textInput(form.get("renewalDate")),
           rentYen,
-          commonFeeYen: 0,
-          managementFeeYen: 0,
-          parkingFeeYen: 0,
-          otherMonthlyFeeYen: 0,
-          securityDepositYen: 0,
-          keyMoneyYen: 0,
-          guaranteeDepositYen: 0,
-          renewalFeeYen: 0,
-          renewalAdminFeeYen: 0,
-          paymentDueDay: 27,
-          paymentMethod: "振込",
+          commonFeeYen,
+          managementFeeYen,
+          parkingFeeYen,
+          otherMonthlyFeeYen,
+          securityDepositYen: yenInput(form.get("securityDepositYen")),
+          keyMoneyYen: yenInput(form.get("keyMoneyYen")),
+          guaranteeDepositYen: yenInput(form.get("guaranteeDepositYen")),
+          renewalFeeYen: yenInput(form.get("renewalFeeYen")),
+          renewalAdminFeeYen: yenInput(form.get("renewalAdminFeeYen")),
+          paymentDueDay: Number(form.get("paymentDueDay")) || 27,
+          paymentMethod: textInput(form.get("paymentMethod")),
           status: "契約中",
           memo: "入居者登録から作成"
         });
-        onMessage("入居者・部屋・契約を保存しました。");
+        await api.createContract(contractInput);
+        onMessage("入居者・契約・初期費用を保存しました。");
         setTenantPropertyId(properties.length === 1 ? properties[0].id : "");
       }
       event.currentTarget.reset();
@@ -488,7 +493,7 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
   return (
     <div className="grid grid-cols-[420px_1fr] gap-6">
       <form className="card grid gap-4 p-5" onSubmit={(event) => void submit(event)}>
-        <h2 className="text-xl font-bold">{kind === "property" ? "物件を登録する" : "入居者を登録する"}</h2>
+        <h2 className="text-xl font-bold">{kind === "property" ? "物件を登録する" : "入居者・契約を登録する"}</h2>
         <p className="text-sm text-slate-600">必須項目だけで保存できます。詳しい情報は後から追加できます。</p>
         {error ? <div className="rounded-lg bg-red-50 p-3 font-bold text-red-800">{error}</div> : null}
         {kind === "property" ? (
@@ -515,6 +520,19 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
             <FormInput name="roomNumber" label="部屋番号" required placeholder="例：101" />
             <FormInput name="rentYen" label="家賃" required placeholder="例：65000" />
             <FormInput name="startDate" label="入居開始日" required type="date" defaultValue={todayText()} />
+            <FormInput name="endDate" label="契約終了日" type="date" />
+            <FormInput name="renewalDate" label="次回更新日" type="date" />
+            <FormInput name="commonFeeYen" label="共益費" placeholder="0" />
+            <FormInput name="managementFeeYen" label="管理費" placeholder="0" />
+            <FormInput name="parkingFeeYen" label="駐車場代" placeholder="0" />
+            <FormInput name="otherMonthlyFeeYen" label="その他月額費用" placeholder="0" />
+            <FormInput name="securityDepositYen" label="敷金" placeholder="0" />
+            <FormInput name="keyMoneyYen" label="礼金" placeholder="0" />
+            <FormInput name="guaranteeDepositYen" label="保証金" placeholder="0" />
+            <FormInput name="renewalFeeYen" label="更新料" placeholder="0" />
+            <FormInput name="renewalAdminFeeYen" label="更新事務手数料" placeholder="0" />
+            <FormInput name="paymentDueDay" label="支払期日" required placeholder="27" defaultValue="27" />
+            <FormSelect name="paymentMethod" label="入金方法" options={["振込", "口座振替", "保証会社送金", "現金", "その他"]} />
             <FormInput name="kanaName" label="フリガナ" placeholder="あとで入力できます" />
             <FormSelect name="tenantType" label="区分" options={["個人", "法人"]} />
             <FormInput name="phone" label="電話番号" placeholder="あとで入力できます" />
@@ -535,9 +553,6 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
 }
 
 function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
-  const [properties, setProperties] = useState<PropertyRecord[]>([]);
-  const [units, setUnits] = useState<UnitRecord[]>([]);
-  const [tenants, setTenants] = useState<TenantRecord[]>([]);
   const [contracts, setContracts] = useState<ContractRecord[]>([]);
   const [charges, setCharges] = useState<MonthlyChargeRecord[]>([]);
   const [spotCharges, setSpotCharges] = useState<SpotChargeRecord[]>([]);
@@ -545,14 +560,11 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
   const [allocations, setAllocations] = useState<AllocationRecord[]>([]);
   const [candidates, setCandidates] = useState<AllocationCandidate[]>([]);
   const [selectedPayment, setSelectedPayment] = useState<PaymentRecord | null>(null);
-  const [tab, setTab] = useState<"請求" | "入金確認" | "スポット請求" | "入金" | "消込" | "契約">("請求");
+  const [tab, setTab] = useState<"請求" | "入金確認" | "スポット請求" | "入金" | "消込">("請求");
   const [targetMonth, setTargetMonth] = useState(currentMonth());
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(async () => {
-    const [propertyList, unitList, tenantList, contractList, chargeList, spotChargeList, paymentList, allocationList] = await Promise.all([api.listProperties(), api.listUnits(), api.listTenants(), api.listContracts(), api.listMonthlyCharges(targetMonth), api.listSpotCharges(), api.listPayments(), api.listAllocations()]);
-    setProperties(propertyList);
-    setUnits(unitList);
-    setTenants(tenantList);
+    const [contractList, chargeList, spotChargeList, paymentList, allocationList] = await Promise.all([api.listContracts(), api.listMonthlyCharges(targetMonth), api.listSpotCharges(), api.listPayments(), api.listAllocations()]);
     setContracts(contractList);
     setCharges(chargeList);
     setSpotCharges(spotChargeList);
@@ -562,41 +574,6 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
   useEffect(() => {
     void reload();
   }, [reload]);
-  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    const form = new FormData(event.currentTarget);
-    try {
-      const input = contractSchema.parse({
-        propertyId: textInput(form.get("propertyId")),
-        unitId: textInput(form.get("unitId")),
-        tenantId: textInput(form.get("tenantId")),
-        startDate: textInput(form.get("startDate")),
-        endDate: textInput(form.get("endDate")),
-        renewalDate: textInput(form.get("renewalDate")),
-        rentYen: yenInput(form.get("rentYen")),
-        commonFeeYen: yenInput(form.get("commonFeeYen")),
-        managementFeeYen: yenInput(form.get("managementFeeYen")),
-        parkingFeeYen: yenInput(form.get("parkingFeeYen")),
-        otherMonthlyFeeYen: yenInput(form.get("otherMonthlyFeeYen")),
-        securityDepositYen: yenInput(form.get("securityDepositYen")),
-        keyMoneyYen: yenInput(form.get("keyMoneyYen")),
-        guaranteeDepositYen: yenInput(form.get("guaranteeDepositYen")),
-        renewalFeeYen: yenInput(form.get("renewalFeeYen")),
-        renewalAdminFeeYen: yenInput(form.get("renewalAdminFeeYen")),
-        paymentDueDay: Number(form.get("paymentDueDay")),
-        paymentMethod: textInput(form.get("paymentMethod")),
-        status: "契約中",
-        memo: textInput(form.get("memo"))
-      });
-      await api.createContract(input);
-      onMessage("契約を保存しました。月次請求を生成できます。");
-      event.currentTarget.reset();
-      await reload();
-    } catch (caught) {
-      setError(caught instanceof z.ZodError ? friendlyZodError(caught) : "契約を保存できませんでした。入力内容を確認してください。");
-    }
-  };
   const generateCharges = async () => {
     const result = await api.generateMonthlyCharges(targetMonth);
     onMessage(`${formatMonthForDisplay(targetMonth)}の月次請求を作成しました。作成 ${result.created}件、作成済み ${result.skipped}件。`);
@@ -731,7 +708,7 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
         </div>
       </div>
       <div className="flex gap-2">
-        {(["請求", "入金確認", "スポット請求", "入金", "消込", "契約"] as const).map((item) => (
+        {(["請求", "入金確認", "スポット請求", "入金", "消込"] as const).map((item) => (
           <button key={item} className={`rounded-lg px-5 py-3 font-bold ${tab === item ? "bg-primary text-white" : "border border-slate-300 bg-white"}`} onClick={() => setTab(item)}>{item}</button>
         ))}
       </div>
@@ -780,35 +757,6 @@ function RentPage({ onMessage }: { onMessage: (message: string) => void }) {
       )}
       {tab === "消込" && (
         <AllocationPanel selectedPayment={selectedPayment} payments={payments} candidates={candidates} allocations={allocations} onChoose={(payment) => void choosePayment(payment)} onAllocate={(candidate) => void allocate(candidate)} onCancel={(allocation) => void cancelAllocation(allocation)} />
-      )}
-      {tab === "契約" && (
-        <div className="grid grid-cols-[420px_1fr] gap-6">
-          <form className="card grid gap-4 p-5" onSubmit={(event) => void submit(event)}>
-          <h2 className="text-xl font-bold">契約を登録する</h2>
-          <p className="text-sm text-slate-600">敷金・礼金・保証金は家賃収入と分けて保存します。</p>
-          <FormSelect name="propertyId" label="物件" options={properties.map((item) => ({ label: item.name, value: item.id }))} />
-          <FormSelect name="unitId" label="部屋" options={units.map((item) => ({ label: `${item.propertyName ?? ""} ${item.roomNumber}`, value: item.id }))} />
-          <FormSelect name="tenantId" label="入居者" options={tenants.map((item) => ({ label: item.displayName, value: item.id }))} />
-          <FormInput name="startDate" label="契約開始日" required type="date" />
-          <FormInput name="endDate" label="契約終了日" type="date" />
-          <FormInput name="renewalDate" label="次回更新日" type="date" />
-          <FormInput name="rentYen" label="家賃" required placeholder="例：65000" />
-          <FormInput name="commonFeeYen" label="共益費" placeholder="0" />
-          <FormInput name="managementFeeYen" label="管理費" placeholder="0" />
-          <FormInput name="parkingFeeYen" label="駐車場代" placeholder="0" />
-          <FormInput name="otherMonthlyFeeYen" label="その他月額費用" placeholder="0" />
-          <FormInput name="securityDepositYen" label="敷金" placeholder="0" />
-          <FormInput name="keyMoneyYen" label="礼金" placeholder="0" />
-          <FormInput name="guaranteeDepositYen" label="保証金" placeholder="0" />
-          <FormInput name="renewalFeeYen" label="更新料" placeholder="0" />
-          <FormInput name="renewalAdminFeeYen" label="更新事務手数料" placeholder="0" />
-          <FormInput name="paymentDueDay" label="支払期日" required placeholder="27" />
-          <FormSelect name="paymentMethod" label="入金方法" options={["振込", "口座振替", "保証会社送金", "現金", "その他"]} />
-          <FormInput name="memo" label="メモ" placeholder="特約や注意点など" />
-          <button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />契約を保存する</button>
-        </form>
-        <ContractList contracts={contracts} />
-      </div>
       )}
     </div>
   );
@@ -1021,6 +969,7 @@ function ExpensePage({ onMessage }: { onMessage: (message: string) => void }) {
   const [properties, setProperties] = useState<PropertyRecord[]>([]);
   const [units, setUnits] = useState<UnitRecord[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+  const [view, setView] = useState<"支出" | "修繕">("支出");
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(async () => {
     const [propertyList, unitList, expenseList] = await Promise.all([api.listProperties(), api.listUnits(), api.listExpenses()]);
@@ -1064,8 +1013,24 @@ function ExpensePage({ onMessage }: { onMessage: (message: string) => void }) {
   };
   const total = expenses.filter((item) => item.status !== "取消").reduce((sum, item) => sum + item.amountYen, 0);
   const noReceipt = expenses.filter((item) => item.status !== "取消" && !item.hasReceipt).length;
+  const tabs = (
+    <div className="flex gap-2">
+      {(["支出", "修繕"] as const).map((item) => (
+        <button key={item} className={`rounded-lg px-5 py-3 font-bold ${view === item ? "bg-primary text-white" : "border border-slate-300 bg-white"}`} onClick={() => setView(item)}>{item}</button>
+      ))}
+    </div>
+  );
+  if (view === "修繕") {
+    return (
+      <div className="grid gap-6">
+        {tabs}
+        <RepairPage onMessage={onMessage} />
+      </div>
+    );
+  }
   return (
     <div className="grid gap-6">
+      {tabs}
       <div className="grid grid-cols-3 gap-4">
         <MetricCard label="登録済み支出" value={formatYen(total)} help="取消されていない支出の合計です。" />
         <MetricCard label="領収書なし" value={`${noReceipt}件`} help="領収書・請求書などの証明書類が未確認の支出です。" />
@@ -1119,6 +1084,75 @@ function ExpenseList({ expenses, onCancel }: { expenses: ExpenseRecord[]; onCanc
   );
 }
 
+function MoveOutPage({ onMessage }: { onMessage: (message: string) => void }) {
+  const [contracts, setContracts] = useState<ContractRecord[]>([]);
+  const [deposits, setDeposits] = useState<DepositTransactionRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const reload = useCallback(async () => {
+    const [contractList, depositList] = await Promise.all([api.listContracts(), api.listDepositTransactions()]);
+    setContracts(contractList);
+    setDeposits(depositList);
+  }, []);
+  useEffect(() => { void reload(); }, [reload]);
+  const settleMoveOut = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      const input = moveOutSettlementSchema.parse({
+        contractId: textInput(form.get("contractId")),
+        moveOutDate: textInput(form.get("moveOutDate")),
+        unpaidRentYen: yenInput(form.get("unpaidRentYen")),
+        restorationFeeYen: yenInput(form.get("restorationFeeYen")),
+        cleaningFeeYen: yenInput(form.get("cleaningFeeYen")),
+        keyReplacementFeeYen: yenInput(form.get("keyReplacementFeeYen")),
+        otherDeductionYen: yenInput(form.get("otherDeductionYen")),
+        refundYen: yenInput(form.get("refundYen")),
+        additionalChargeYen: yenInput(form.get("additionalChargeYen")),
+        memo: textInput(form.get("memo"))
+      });
+      const result = await api.settleMoveOut(input);
+      event.currentTarget.reset();
+      onMessage(`退去精算を登録しました。敷金・保証金の残高は${formatYen(result.depositBalanceYen)}です。`);
+      await reload();
+    } catch (caught) {
+      setError(caught instanceof z.ZodError ? friendlyZodError(caught) : caught instanceof Error ? caught.message : "退去精算を保存できませんでした。");
+    }
+  };
+  const cancel = async (deposit: DepositTransactionRecord) => {
+    if (!window.confirm("この敷金・預り金の取引を取り消します。残高の確認が必要です。よろしいですか？")) return;
+    await api.cancelDepositTransaction(deposit.id);
+    onMessage("敷金・預り金の取引を取り消しました。");
+    await reload();
+  };
+  return (
+    <div className="grid gap-6">
+      <div className="card p-5">
+        <h2 className="text-xl font-bold">退去精算</h2>
+        <p className="mt-1 text-slate-600">退去時の控除、返金、追加請求をまとめて登録します。保存すると契約は終了し、部屋は空室になります。</p>
+      </div>
+      <div className="grid grid-cols-[420px_1fr] gap-6">
+        <form className="card grid gap-4 p-5" onSubmit={(event) => void settleMoveOut(event)}>
+          <h2 className="text-xl font-bold">退去精算を登録する</h2>
+          {error ? <div className="rounded-lg bg-red-50 p-3 font-bold text-red-800">{error}</div> : null}
+          <FormSelect name="contractId" label="契約" options={contracts.filter((item) => item.status !== "終了").map((item) => ({ label: `${item.tenantName} / ${item.propertyName} ${item.roomNumber}`, value: item.id }))} />
+          <FormInput name="moveOutDate" label="退去日" required type="date" defaultValue={todayText()} />
+          <FormInput name="unpaidRentYen" label="未収家賃・日割り差額" placeholder="0" />
+          <FormInput name="restorationFeeYen" label="原状回復費" placeholder="0" />
+          <FormInput name="cleaningFeeYen" label="清掃費" placeholder="0" />
+          <FormInput name="keyReplacementFeeYen" label="鍵交換費" placeholder="0" />
+          <FormInput name="otherDeductionYen" label="その他控除" placeholder="0" />
+          <FormInput name="refundYen" label="返金額" placeholder="0" />
+          <FormInput name="additionalChargeYen" label="追加請求額" placeholder="0" />
+          <FormInput name="memo" label="メモ" placeholder="立会い結果や精算メモ" />
+          <button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />退去精算を保存する</button>
+        </form>
+        <DepositList deposits={deposits} onCancel={(deposit) => void cancel(deposit)} />
+      </div>
+    </div>
+  );
+}
+
 function DepositPage({ onMessage }: { onMessage: (message: string) => void }) {
   const [contracts, setContracts] = useState<ContractRecord[]>([]);
   const [deposits, setDeposits] = useState<DepositTransactionRecord[]>([]);
@@ -1157,31 +1191,6 @@ function DepositPage({ onMessage }: { onMessage: (message: string) => void }) {
     onMessage("敷金・預り金の取引を取り消しました。");
     await reload();
   };
-  const settleMoveOut = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    const form = new FormData(event.currentTarget);
-    try {
-      const input = moveOutSettlementSchema.parse({
-        contractId: textInput(form.get("contractId")),
-        moveOutDate: textInput(form.get("moveOutDate")),
-        unpaidRentYen: yenInput(form.get("unpaidRentYen")),
-        restorationFeeYen: yenInput(form.get("restorationFeeYen")),
-        cleaningFeeYen: yenInput(form.get("cleaningFeeYen")),
-        keyReplacementFeeYen: yenInput(form.get("keyReplacementFeeYen")),
-        otherDeductionYen: yenInput(form.get("otherDeductionYen")),
-        refundYen: yenInput(form.get("refundYen")),
-        additionalChargeYen: yenInput(form.get("additionalChargeYen")),
-        memo: textInput(form.get("memo"))
-      });
-      const result = await api.settleMoveOut(input);
-      event.currentTarget.reset();
-      onMessage(`退去精算を登録しました。敷金・保証金の残高は${formatYen(result.depositBalanceYen)}です。`);
-      await reload();
-    } catch (caught) {
-      setError(caught instanceof z.ZodError ? friendlyZodError(caught) : caught instanceof Error ? caught.message : "退去精算を保存できませんでした。");
-    }
-  };
   const balance = deposits.filter((item) => item.status === "有効").reduce((sum, item) => item.transactionType === "預り" || item.transactionType === "修正" ? sum + item.amountYen : sum - item.amountYen, 0);
   return (
     <div className="grid gap-6">
@@ -1189,25 +1198,6 @@ function DepositPage({ onMessage }: { onMessage: (message: string) => void }) {
         <h2 className="text-xl font-bold">敷金・預り金</h2>
         <p className="mt-1 text-slate-600">契約登録時の敷金・保証金は預り金として残高管理し、礼金は返還しない請求として分けて管理します。</p>
         <div className="mt-4 text-3xl font-bold">{formatYen(balance)}</div>
-      </div>
-      <div className="grid grid-cols-[420px_1fr] gap-6">
-        <form className="card grid gap-4 p-5" onSubmit={(event) => void settleMoveOut(event)}>
-          <h2 className="text-xl font-bold">退去精算を登録する</h2>
-          <p className="text-sm text-slate-600">敷金・保証金から控除、返金、残高超過分の追加請求をまとめて登録します。</p>
-          {error ? <div className="rounded-lg bg-red-50 p-3 font-bold text-red-800">{error}</div> : null}
-          <FormSelect name="contractId" label="契約" options={contracts.map((item) => ({ label: `${item.tenantName} / ${item.propertyName} ${item.roomNumber}`, value: item.id }))} />
-          <FormInput name="moveOutDate" label="退去日" required type="date" defaultValue={todayText()} />
-          <FormInput name="unpaidRentYen" label="未収家賃・日割り差額" placeholder="0" />
-          <FormInput name="restorationFeeYen" label="原状回復費" placeholder="0" />
-          <FormInput name="cleaningFeeYen" label="清掃費" placeholder="0" />
-          <FormInput name="keyReplacementFeeYen" label="鍵交換費" placeholder="0" />
-          <FormInput name="otherDeductionYen" label="その他控除" placeholder="0" />
-          <FormInput name="refundYen" label="返金額" placeholder="0" />
-          <FormInput name="additionalChargeYen" label="追加請求額" placeholder="0" />
-          <FormInput name="memo" label="メモ" placeholder="立会い結果や精算メモ" />
-          <button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />退去精算を保存する</button>
-        </form>
-        <DepositList deposits={deposits} onCancel={(deposit) => void cancel(deposit)} />
       </div>
       <div className="grid grid-cols-[420px_1fr] gap-6">
         <form className="card grid gap-4 p-5" onSubmit={(event) => void submit(event)}>
@@ -1223,14 +1213,7 @@ function DepositPage({ onMessage }: { onMessage: (message: string) => void }) {
           <FormInput name="memo" label="メモ" placeholder="補足" />
           <button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />取引を保存する</button>
         </form>
-        <div className="card p-5">
-          <h2 className="text-xl font-bold">入居時の扱い</h2>
-          <div className="mt-4 grid gap-3">
-            <SummaryTile label="敷金・保証金" value="契約登録時に預り金残高へ自動反映" />
-            <SummaryTile label="礼金" value="返還しない一時請求として自動作成" />
-            <SummaryTile label="退去時" value="控除・返金・追加請求を上の精算フォームで登録" />
-          </div>
-        </div>
+        <DepositList deposits={deposits} onCancel={(deposit) => void cancel(deposit)} />
       </div>
     </div>
   );
@@ -1766,30 +1749,6 @@ function TenantList({ tenants, contracts }: { tenants: TenantRecord[]; contracts
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function ContractList({ contracts }: { contracts: ContractRecord[] }) {
-  if (contracts.length === 0) return <EmptyState title="契約はまだ登録されていません" action="左のフォームから契約を登録する" />;
-  return (
-    <div className="card overflow-hidden">
-      <div className="border-b border-slate-200 p-5">
-        <h2 className="text-xl font-bold">契約一覧</h2>
-      </div>
-      <div className="divide-y divide-slate-200">
-        {contracts.map((contract) => (
-          <div key={contract.id} className="grid grid-cols-[1fr_150px_120px] items-center gap-4 p-4">
-            <div>
-              <div className="font-bold">{contract.tenantName ?? contract.tenantId}</div>
-              <div className="text-sm text-slate-600">{contract.propertyName} {contract.roomNumber}</div>
-              {contract.renewalDate ? <div className="text-xs text-slate-500">次回更新日: {formatDate(contract.renewalDate)} / 更新関連 {formatYen((contract.renewalFeeYen ?? 0) + (contract.renewalAdminFeeYen ?? 0))}</div> : null}
-            </div>
-            <div className="font-bold">{formatYen(contract.rentYen + contract.commonFeeYen + contract.managementFeeYen + contract.parkingFeeYen + contract.otherMonthlyFeeYen)}</div>
-            <span className="badge badge-ok">{contract.status}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
