@@ -4,17 +4,20 @@ const fs = require("fs");
 const crypto = require("crypto");
 const AdmZip = require("adm-zip");
 const { parseBackupMetadata, validateBackupEntries, verifyBackupDatabaseHash } = require("./backup-safety.cjs");
+const { applyInitialSqliteSchema, createRuntimeLogger, sqliteTableExists } = require("./runtime-safety.cjs");
 
 const userDataDir = app.getPath("userData");
 const dataDir = path.join(userDataDir, "user-data");
 const dbPath = path.join(dataDir, "ownerledger.sqlite");
 const attachmentsDir = path.join(dataDir, "attachments");
+const logsDir = path.join(userDataDir, "logs");
 fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(attachmentsDir, { recursive: true });
 process.env.DATABASE_URL = `file:${dbPath.replace(/\\/g, "/")}`;
 
 const { PrismaClient } = require("@prisma/client");
 let prisma = new PrismaClient();
+const logger = createRuntimeLogger(logsDir);
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
@@ -25,6 +28,32 @@ function serialize(value) {
 function reconnectPrisma() {
   prisma = new PrismaClient();
 }
+
+function bundledMigrationPath() {
+  return path.join(__dirname, "..", "prisma", "migrations", "20260525061708_init", "migration.sql");
+}
+
+async function ensureDatabaseReady() {
+  const hasSettingsTable = await sqliteTableExists(prisma, "AppSetting");
+  if (hasSettingsTable) {
+    logger.info("Database schema is ready.", { dbPath });
+    return;
+  }
+  const migrationPath = bundledMigrationPath();
+  if (!fs.existsSync(migrationPath)) {
+    throw new Error("初期データベース定義が見つかりません。アプリを再インストールしてください。");
+  }
+  const statementCount = await applyInitialSqliteSchema(prisma, fs.readFileSync(migrationPath, "utf8"));
+  logger.info("Initial database schema was applied.", { dbPath, migrationPath, statementCount });
+}
+
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught exception", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logger.error("Unhandled rejection", reason instanceof Error ? reason : { reason });
+});
 
 async function audit(actionType, targetTable, targetId, beforeValue, afterValue, memo) {
   await prisma.auditLog.create({
@@ -1064,6 +1093,7 @@ ipcMain.handle("backup:restore", async () => {
   });
   if (result.canceled || !result.filePaths[0]) throw new Error("復元するバックアップファイルが選ばれていません。");
   const restorePath = result.filePaths[0];
+  logger.info("Backup restore requested.", { restorePath });
   const zip = new AdmZip(restorePath);
   validateBackupEntries(zip.getEntries().map((entry) => entry.entryName));
   const metadataEntry = zip.getEntry("metadata.json");
@@ -1122,10 +1152,20 @@ ipcMain.handle("backup:restore", async () => {
     }
   });
   await audit("復元", "BackupHistory", history.id, null, { restoredFrom: restorePath, safetyBackupPath }, "バックアップから復元しました。");
+  logger.info("Backup restore completed.", { restorePath, safetyBackupPath });
   return { restoredFrom: restorePath, safetyBackupPath };
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  try {
+    await ensureDatabaseReady();
+    await createWindow();
+  } catch (error) {
+    logger.error("Application startup failed.", error);
+    dialog.showErrorBox("起動できませんでした", error instanceof Error ? error.message : "保存データの準備中にエラーが発生しました。");
+    app.quit();
+  }
+});
 app.on("window-all-closed", async () => {
   await prisma.$disconnect();
   if (process.platform !== "darwin") app.quit();
