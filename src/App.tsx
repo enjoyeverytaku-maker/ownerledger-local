@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, Building2, ChevronRight, DatabaseBackup, FileText, HelpCircle, Home, Landmark, ReceiptText, Save, Search, Settings, ShieldCheck, Users } from "lucide-react";
+import { Archive, Building2, ChevronRight, DatabaseBackup, FileText, Home, Landmark, ReceiptText, Save, Search, ShieldCheck, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import Papa from "papaparse";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -15,15 +15,12 @@ const navItems = [
   { key: "物件", icon: Building2 },
   { key: "入居者", icon: Users },
   { key: "家賃・入金", icon: ReceiptText },
-  { key: "未収・滞納", icon: AlertTriangle },
   { key: "支出", icon: FileText },
   { key: "修繕", icon: ShieldCheck },
   { key: "敷金", icon: Landmark },
-  { key: "ローン", icon: Landmark },
   { key: "書類", icon: FileText },
   { key: "レポート", icon: FileText },
-  { key: "バックアップ", icon: DatabaseBackup },
-  { key: "設定", icon: Settings }
+  { key: "バックアップ", icon: DatabaseBackup }
 ] as const;
 
 const propertyTypes = ["アパート", "マンション", "戸建", "区分マンション", "店舗", "事務所", "駐車場", "その他"];
@@ -66,21 +63,24 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="side-nav">
-        <div className="mb-8">
-          <div className="text-xl font-bold">オーナーレジャー</div>
-          <div className="text-sm text-white/72">ローカル保存で安心管理</div>
+        <div className="brand-block">
+          <div className="brand-mark">OL</div>
+          <div>
+            <div className="brand-title">OwnerLedger</div>
+            <div className="brand-subtitle">Local</div>
+          </div>
         </div>
-        <nav className="grid gap-1">
+        <nav className="nav-list">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <button
                 key={item.key}
-                className={`flex items-center gap-3 rounded-lg px-3 py-3 text-left text-[15px] font-bold ${screen === item.key ? "bg-white text-[#173b3f]" : "text-white/88 hover:bg-white/12"}`}
+                className={`nav-item ${screen === item.key ? "nav-item-active" : ""}`}
                 onClick={() => setScreen(item.key)}
               >
-                <Icon size={20} />
-                {item.key}
+                <Icon size={19} />
+                <span>{item.key}</span>
               </button>
             );
           })}
@@ -90,15 +90,13 @@ function App() {
         <header className="topbar">
           <div>
             <h1 className="text-2xl font-bold">{screen}</h1>
-            <p className="text-sm text-slate-600">迷わず確認・登録できるよう、必要な情報から順に表示しています。</p>
+            <p className="text-sm text-slate-600">収支、入金、証憑をローカルで整理します。</p>
           </div>
-          <div className="flex gap-2">
-            <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-bold"><HelpCircle className="mr-2 inline" size={18} />ヘルプ</button>
-            <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-bold" onClick={() => setScreen("設定")}><Settings className="mr-2 inline" size={18} />設定</button>
-            <button className="rounded-lg bg-primary px-4 py-2 font-bold text-primary-foreground" onClick={() => setScreen("バックアップ")}><DatabaseBackup className="mr-2 inline" size={18} />バックアップ</button>
+          <div className="topbar-actions">
+            <button className="btn btn-primary" onClick={() => setScreen("バックアップ")}><DatabaseBackup className="mr-2 inline" size={18} />バックアップ</button>
           </div>
         </header>
-        {message ? <div className="mx-7 mt-5 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 font-bold text-emerald-900">{message}</div> : null}
+        {message ? <div className="status-message">{message}</div> : null}
         <section className="content">
           {screen === "ホーム" && <Dashboard onNavigate={setScreen} />}
           {screen === "物件" && <MasterDataPage kind="property" onMessage={setMessage} />}
@@ -110,7 +108,6 @@ function App() {
           {screen === "書類" && <DocumentPage onMessage={setMessage} />}
           {screen === "レポート" && <ReportPage onMessage={setMessage} />}
           {screen === "バックアップ" && <BackupPage onMessage={setMessage} />}
-          {!["ホーム", "物件", "入居者", "家賃・入金", "支出", "敷金", "修繕", "書類", "レポート", "バックアップ"].includes(screen) && <WorkInProgress title={screen} />}
         </section>
       </main>
     </div>
@@ -1435,18 +1432,6 @@ function BackupPage({ onMessage }: { onMessage: (message: string) => void }) {
   );
 }
 
-function WorkInProgress({ title }: { title: string }) {
-  return (
-    <div className="card p-6">
-      <h2 className="text-2xl font-bold">{title}</h2>
-      <p className="mt-2 text-slate-700">この画面は商用版に向けた設計とデータモデルを作成済みです。次のフェーズで、登録・検索・出力の操作画面を順に実装します。</p>
-      <div className="mt-5 grid grid-cols-3 gap-4">
-        {["検索しやすい一覧", "取消できる重要操作", "操作履歴への記録"].map((item) => <div key={item} className="rounded-lg border border-slate-200 bg-slate-50 p-4 font-bold">{item}</div>)}
-      </div>
-    </div>
-  );
-}
-
 function MetricCard({ label, value, help }: { label: string; value: string; help: string }) {
   return (
     <div className="card p-4">
@@ -1577,10 +1562,14 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
 
 function EmptyState({ title, action, onClick }: { title: string; action: string; onClick?: () => void }) {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
+    <div className="empty-state">
       <Archive className="mx-auto text-slate-400" size={38} />
       <h3 className="mt-3 text-lg font-bold">{title}</h3>
-      <button className="mt-4 rounded-lg bg-primary px-4 py-2 font-bold text-white" onClick={onClick}>{action}</button>
+      {onClick ? (
+        <button className="btn btn-primary mt-4" onClick={onClick}>{action}</button>
+      ) : (
+        <p className="mt-3 text-sm font-bold text-slate-500">{action}</p>
+      )}
     </div>
   );
 }

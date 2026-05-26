@@ -24,4 +24,27 @@ describe("beginner-friendly UI", () => {
     fireEvent.click(nextButton);
     expect(screen.getByText("名前または屋号")).toBeInTheDocument();
   });
+
+  it("販売前の未完成メニューを表示しない", async () => {
+    localStorage.setItem("ownerledger-local-browser-data", JSON.stringify({
+      setupCompleted: true,
+      properties: [],
+      units: [],
+      tenants: [],
+      contracts: [],
+      charges: [],
+      spotCharges: [],
+      payments: [],
+      allocations: [],
+      expenses: [],
+      deposits: [],
+      repairs: [],
+      documents: []
+    }));
+    render(<App />);
+    expect(await screen.findByText("OwnerLedger")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "未収・滞納" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "ローン" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "設定" })).not.toBeInTheDocument();
+  });
 });
