@@ -478,8 +478,28 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
           status: "契約中",
           memo: "入居者登録から作成"
         });
-        await api.createContract(contractInput);
-        onMessage("入居者・契約・初期費用を保存しました。");
+        const contract = await api.createContract(contractInput);
+        if (form.get("attachLeaseContract") === "on") {
+          try {
+            await api.attachDocument({
+              displayName: `${input.displayName} 賃貸借契約書`,
+              documentType: "契約書",
+              propertyId,
+              unitId: unit.id,
+              contractId: contract.id,
+              issuedAt: startDate,
+              receivedAt: todayText(),
+              amountYen: 0,
+              counterparty: input.displayName,
+              memo: "入居者登録時に添付"
+            });
+            onMessage("入居者・契約・初期費用を保存し、賃貸借契約書を添付しました。");
+          } catch (attachError) {
+            onMessage(`入居者・契約・初期費用を保存しました。契約書の添付は完了していません: ${attachError instanceof Error ? attachError.message : "ファイルが選ばれていません。"}`);
+          }
+        } else {
+          onMessage("入居者・契約・初期費用を保存しました。");
+        }
         setTenantPropertyId(properties.length === 1 ? properties[0].id : "");
       }
       event.currentTarget.reset();
@@ -531,6 +551,10 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
             <FormInput name="renewalAdminFeeYen" label="更新事務手数料" placeholder="0" />
             <FormInput name="paymentDueDay" label="支払期日" required placeholder="27" defaultValue="27" />
             <FormSelect name="paymentMethod" label="入金方法" options={["振込", "口座振替", "保証会社送金", "現金", "その他"]} />
+            <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 font-bold">
+              <input name="attachLeaseContract" type="checkbox" />
+              賃貸借契約書を一緒に添付する
+            </label>
             <FormInput name="kanaName" label="フリガナ" placeholder="あとで入力できます" />
             <FormSelect name="tenantType" label="区分" options={["個人", "法人"]} />
             <FormInput name="phone" label="電話番号" placeholder="あとで入力できます" />
