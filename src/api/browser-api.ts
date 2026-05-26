@@ -138,7 +138,51 @@ export const browserApi: OwnerLedgerApi = {
   async createContract(input) {
     const store = load();
     const contract = { ...input, id: id("contract") };
-    save({ ...store, contracts: [contract, ...store.contracts] });
+    const tenant = store.tenants.find((item) => item.id === contract.tenantId);
+    const property = store.properties.find((item) => item.id === contract.propertyId);
+    const unit = store.units.find((item) => item.id === contract.unitId);
+    const deposits = [...store.deposits];
+    let balance = 0;
+    const addDeposit = (depositType: string, amountYen: number, description: string) => {
+      if (amountYen <= 0) return;
+      balance += amountYen;
+      deposits.unshift({
+        id: id("deposit"),
+        contractId: contract.id,
+        tenantName: tenant?.displayName,
+        propertyName: property?.name,
+        roomNumber: unit?.roomNumber,
+        transactedAt: contract.startDate,
+        depositType,
+        transactionType: "預り",
+        amountYen,
+        description,
+        balanceAfterYen: balance,
+        status: "有効",
+        memo: "契約登録時に自動作成"
+      });
+    };
+    addDeposit("敷金", contract.securityDepositYen, "契約時敷金の預り");
+    addDeposit("保証金", contract.guaranteeDepositYen, "契約時保証金の預り");
+    const spotCharges = contract.keyMoneyYen > 0 ? [{
+      id: id("spot"),
+      contractId: contract.id,
+      tenantName: tenant?.displayName,
+      propertyName: property?.name,
+      roomNumber: unit?.roomNumber,
+      billedAt: contract.startDate,
+      dueDate: contract.startDate,
+      chargeType: "礼金",
+      description: "契約時礼金",
+      amountYen: contract.keyMoneyYen,
+      allocatedYen: 0,
+      remainingYen: contract.keyMoneyYen,
+      taxType: "税理士確認",
+      status: "請求済",
+      paidStatus: "未入金",
+      memo: "契約登録時に自動作成"
+    }, ...store.spotCharges] : store.spotCharges;
+    save({ ...store, contracts: [contract, ...store.contracts], deposits, spotCharges });
     return contract;
   },
   async generateMonthlyCharges(targetMonth: string) {
@@ -345,6 +389,67 @@ export const browserApi: OwnerLedgerApi = {
   async cancelDepositTransaction(idValue: string) {
     const store = load();
     save({ ...store, deposits: store.deposits.map((item) => item.id === idValue ? { ...item, status: "取消" } : item) });
+  },
+  async settleMoveOut(input) {
+    const store = load();
+    const contract = store.contracts.find((item) => item.id === input.contractId);
+    if (!contract) throw new Error("契約が見つかりません。");
+    const tenant = store.tenants.find((item) => item.id === contract.tenantId);
+    const property = store.properties.find((item) => item.id === contract.propertyId);
+    const unit = store.units.find((item) => item.id === contract.unitId);
+    let balance = store.deposits
+      .filter((item) => item.contractId === input.contractId && item.status === "有効")
+      .reduce((sum, item) => item.transactionType === "預り" || item.transactionType === "修正" ? sum + item.amountYen : sum - item.amountYen, 0);
+    const deductionTotal = input.unpaidRentYen + input.restorationFeeYen + input.cleaningFeeYen + input.keyReplacementFeeYen + input.otherDeductionYen;
+    const depositDeductionYen = Math.min(deductionTotal, balance);
+    const shortageYen = Math.max(0, deductionTotal - depositDeductionYen);
+    if (input.additionalChargeYen < shortageYen) throw new Error(`敷金・保証金で足りない金額が${shortageYen.toLocaleString("ja-JP")}円あります。追加請求額に入力してください。`);
+    if (input.refundYen > balance - depositDeductionYen) throw new Error("返金額が退去精算後の敷金・保証金残高を超えています。");
+    const deposits = [...store.deposits];
+    const pushDeposit = (transactionType: string, amountYen: number, description: string) => {
+      if (amountYen <= 0) return;
+      balance = transactionType === "預り" || transactionType === "修正" ? balance + amountYen : balance - amountYen;
+      deposits.unshift({
+        id: id("deposit"),
+        contractId: input.contractId,
+        tenantName: tenant?.displayName,
+        propertyName: property?.name,
+        roomNumber: unit?.roomNumber,
+        transactedAt: input.moveOutDate,
+        depositType: "退去精算預り",
+        transactionType,
+        amountYen,
+        description,
+        balanceAfterYen: balance,
+        status: "有効",
+        memo: input.memo
+      });
+    };
+    const breakdown = [`未収家賃等 ${input.unpaidRentYen}円`, `原状回復 ${input.restorationFeeYen}円`, `清掃 ${input.cleaningFeeYen}円`, `鍵交換 ${input.keyReplacementFeeYen}円`, `その他 ${input.otherDeductionYen}円`].join(" / ");
+    pushDeposit("控除", depositDeductionYen, `退去精算控除: ${breakdown}`);
+    pushDeposit("返金", input.refundYen, "退去精算による敷金・保証金返金");
+    const spotCharges = input.additionalChargeYen > 0 ? [{
+      id: id("spot"),
+      contractId: input.contractId,
+      tenantName: tenant?.displayName,
+      propertyName: property?.name,
+      roomNumber: unit?.roomNumber,
+      billedAt: input.moveOutDate,
+      dueDate: input.moveOutDate,
+      chargeType: "退去精算",
+      description: "敷金・保証金残高を超える退去精算追加請求",
+      amountYen: input.additionalChargeYen,
+      allocatedYen: 0,
+      remainingYen: input.additionalChargeYen,
+      taxType: "税理士確認",
+      status: "請求済",
+      paidStatus: "未入金",
+      memo: input.memo
+    }, ...store.spotCharges] : store.spotCharges;
+    const contracts = store.contracts.map((item) => item.id === input.contractId ? { ...item, status: "終了", endDate: input.moveOutDate } : item);
+    const units = store.units.map((item) => item.id === contract.unitId ? { ...item, status: "空室", currentRentYen: 0 } : item);
+    save({ ...store, contracts, units, deposits, spotCharges });
+    return { depositBalanceYen: balance, createdTransactions: Number(depositDeductionYen > 0) + Number(input.refundYen > 0), createdSpotCharge: input.additionalChargeYen > 0 };
   },
   async listRepairs() {
     return load().repairs;

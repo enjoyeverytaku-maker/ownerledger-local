@@ -135,6 +135,19 @@ export const depositTransactionSchema = z.object({
   memo: z.string().optional()
 });
 
+export const moveOutSettlementSchema = z.object({
+  contractId: z.string().min(1, "契約を選んでください。"),
+  moveOutDate: dateText,
+  unpaidRentYen: yen,
+  restorationFeeYen: yen,
+  cleaningFeeYen: yen,
+  keyReplacementFeeYen: yen,
+  otherDeductionYen: yen,
+  refundYen: yen,
+  additionalChargeYen: yen,
+  memo: z.string().optional()
+});
+
 export const repairSchema = z.object({
   propertyId: z.string().min(1, "物件を選んでください。"),
   unitId: z.string().optional(),

@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld("ownerLedger", {
   listDepositTransactions: () => invoke("deposits:list"),
   createDepositTransaction: (input) => invoke("deposits:create", input),
   cancelDepositTransaction: (id) => invoke("deposits:cancel", id),
+  settleMoveOut: (input) => invoke("moveOuts:settle", input),
   listRepairs: () => invoke("repairs:list"),
   createRepair: (input) => invoke("repairs:create", input),
   linkRepairExpense: (input) => invoke("repairs:linkExpense", input),

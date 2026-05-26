@@ -518,17 +518,52 @@ ipcMain.handle("contracts:list", async () => {
   return serialize(contracts.map((contract) => ({ ...contract, propertyName: contract.property.name, roomNumber: contract.unit.roomNumber, tenantName: contract.tenant.displayName })));
 });
 ipcMain.handle("contracts:create", async (_event, input) => {
-  const contract = await prisma.contract.create({
-    data: {
-      ...input,
-      startDate: new Date(input.startDate),
-      endDate: input.endDate ? new Date(input.endDate) : null,
-      renewalDate: input.renewalDate ? new Date(input.renewalDate) : null
+  return prisma.$transaction(async (tx) => {
+    const contract = await tx.contract.create({
+      data: {
+        ...input,
+        startDate: new Date(input.startDate),
+        endDate: input.endDate ? new Date(input.endDate) : null,
+        renewalDate: input.renewalDate ? new Date(input.renewalDate) : null
+      }
+    });
+    await tx.unit.update({ where: { id: input.unitId }, data: { status: "入居中", currentRentYen: input.rentYen } });
+    let balance = 0;
+    const createInitialDeposit = async (depositType, amountYen, description) => {
+      if (amountYen <= 0) return;
+      balance += amountYen;
+      await tx.depositTransaction.create({
+        data: {
+          contractId: contract.id,
+          transactedAt: contract.startDate,
+          depositType,
+          transactionType: "預り",
+          amountYen,
+          description,
+          balanceAfterYen: balance,
+          memo: "契約登録時に自動作成"
+        }
+      });
+    };
+    await createInitialDeposit("敷金", contract.securityDepositYen, "契約時敷金の預り");
+    await createInitialDeposit("保証金", contract.guaranteeDepositYen, "契約時保証金の預り");
+    if (contract.keyMoneyYen > 0) {
+      await tx.spotCharge.create({
+        data: {
+          contractId: contract.id,
+          billedAt: contract.startDate,
+          dueDate: contract.startDate,
+          chargeType: "礼金",
+          description: "契約時礼金",
+          amountYen: contract.keyMoneyYen,
+          taxType: "税理士確認",
+          memo: "契約登録時に自動作成"
+        }
+      });
     }
+    await tx.auditLog.create({ data: { actionType: "契約作成", targetTable: "Contract", targetId: contract.id, afterJson: JSON.stringify(contract), memo: "契約を登録しました。" } });
+    return serialize(contract);
   });
-  await prisma.unit.update({ where: { id: input.unitId }, data: { status: "入居中", currentRentYen: input.rentYen } });
-  await audit("契約作成", "Contract", contract.id, null, contract, "契約を登録しました。");
-  return serialize(contract);
 });
 
 ipcMain.handle("charges:generateMonthly", async (_event, targetMonth) => {
@@ -972,6 +1007,69 @@ ipcMain.handle("deposits:cancel", async (_event, id) => {
         memo: "敷金・預り金の取引を取り消しました。"
       }
     });
+  });
+});
+
+ipcMain.handle("moveOuts:settle", async (_event, input) => {
+  return prisma.$transaction(async (tx) => {
+    const contract = await tx.contract.findUniqueOrThrow({ where: { id: input.contractId }, include: { tenant: true, property: true, unit: true } });
+    let balance = await calculateDepositBalanceForContract(tx, input.contractId);
+    const deductionTotal = input.unpaidRentYen + input.restorationFeeYen + input.cleaningFeeYen + input.keyReplacementFeeYen + input.otherDeductionYen;
+    const depositDeductionYen = Math.min(deductionTotal, balance);
+    const shortageYen = Math.max(0, deductionTotal - depositDeductionYen);
+    if (input.additionalChargeYen < shortageYen) throw new Error(`敷金・保証金で足りない金額が${shortageYen.toLocaleString("ja-JP")}円あります。追加請求額に入力してください。`);
+    if (input.refundYen > balance - depositDeductionYen) throw new Error("返金額が退去精算後の敷金・保証金残高を超えています。");
+    const createdTransactions = [];
+    const moveOutDate = new Date(input.moveOutDate);
+    const createDeposit = async (transactionType, amountYen, description) => {
+      if (amountYen <= 0) return;
+      balance = transactionType === "預り" || transactionType === "修正" ? balance + amountYen : balance - amountYen;
+      const deposit = await tx.depositTransaction.create({
+        data: {
+          contractId: input.contractId,
+          transactedAt: moveOutDate,
+          depositType: "退去精算預り",
+          transactionType,
+          amountYen,
+          description,
+          balanceAfterYen: balance,
+          memo: input.memo || null
+        }
+      });
+      createdTransactions.push(deposit);
+    };
+    const breakdown = [`未収家賃等 ${input.unpaidRentYen}円`, `原状回復 ${input.restorationFeeYen}円`, `清掃 ${input.cleaningFeeYen}円`, `鍵交換 ${input.keyReplacementFeeYen}円`, `その他 ${input.otherDeductionYen}円`].join(" / ");
+    await createDeposit("控除", depositDeductionYen, `退去精算控除: ${breakdown}`);
+    await createDeposit("返金", input.refundYen, "退去精算による敷金・保証金返金");
+    let createdSpotCharge = false;
+    if (input.additionalChargeYen > 0) {
+      await tx.spotCharge.create({
+        data: {
+          contractId: input.contractId,
+          billedAt: moveOutDate,
+          dueDate: moveOutDate,
+          chargeType: "退去精算",
+          description: "敷金・保証金残高を超える退去精算追加請求",
+          amountYen: input.additionalChargeYen,
+          taxType: "税理士確認",
+          memo: input.memo || null
+        }
+      });
+      createdSpotCharge = true;
+    }
+    const updatedContract = await tx.contract.update({ where: { id: input.contractId }, data: { status: "終了", endDate: moveOutDate, moveOutDate } });
+    await tx.unit.update({ where: { id: contract.unitId }, data: { status: "空室", currentRentYen: 0 } });
+    await tx.auditLog.create({
+      data: {
+        actionType: "退去精算",
+        targetTable: "Contract",
+        targetId: input.contractId,
+        beforeJson: JSON.stringify(contract),
+        afterJson: JSON.stringify({ updatedContract, createdTransactions, createdSpotCharge, depositBalanceYen: balance }),
+        memo: "退去精算を登録しました。"
+      }
+    });
+    return { depositBalanceYen: balance, createdTransactions: createdTransactions.length, createdSpotCharge };
   });
 });
 

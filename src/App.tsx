@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveCo
 import { z } from "zod";
 import { getApi } from "./api/browser-api";
 import { currentMonth, formatDate, formatMonthForDisplay, formatYen, parseYenInput } from "./lib/format";
-import { allocationSchema, contractSchema, depositTransactionSchema, documentSchema, expenseSchema, friendlyZodError, paymentSchema, propertySchema, repairSchema, setupSchema, spotChargeSchema, tenantSchema } from "./lib/validation";
+import { allocationSchema, contractSchema, depositTransactionSchema, documentSchema, expenseSchema, friendlyZodError, moveOutSettlementSchema, paymentSchema, propertySchema, repairSchema, setupSchema, spotChargeSchema, tenantSchema } from "./lib/validation";
 import type { AllocationCandidate, AllocationRecord, ContractRecord, DashboardSummary, DepositTransactionRecord, DocumentRecord, ExpenseRecord, FontSizePreference, MonthlyChargeRecord, PaymentCsvRow, PaymentRecord, PropertyRecord, RepairRecord, ReportSummary, SetupPayload, SpotChargeRecord, TenantRecord, UnitRecord } from "./types";
 
 const api = getApi();
@@ -485,7 +485,6 @@ function MasterDataPage({ kind, onMessage }: { kind: "property" | "tenant"; onMe
       setError(caught instanceof z.ZodError ? friendlyZodError(caught) : caught instanceof Error ? caught.message : "保存できませんでした。入力内容を確認してください。");
     }
   };
-
   return (
     <div className="grid grid-cols-[420px_1fr] gap-6">
       <form className="card grid gap-4 p-5" onSubmit={(event) => void submit(event)}>
@@ -1081,17 +1080,62 @@ function DepositPage({ onMessage }: { onMessage: (message: string) => void }) {
     onMessage("敷金・預り金の取引を取り消しました。");
     await reload();
   };
+  const settleMoveOut = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      const input = moveOutSettlementSchema.parse({
+        contractId: textInput(form.get("contractId")),
+        moveOutDate: textInput(form.get("moveOutDate")),
+        unpaidRentYen: yenInput(form.get("unpaidRentYen")),
+        restorationFeeYen: yenInput(form.get("restorationFeeYen")),
+        cleaningFeeYen: yenInput(form.get("cleaningFeeYen")),
+        keyReplacementFeeYen: yenInput(form.get("keyReplacementFeeYen")),
+        otherDeductionYen: yenInput(form.get("otherDeductionYen")),
+        refundYen: yenInput(form.get("refundYen")),
+        additionalChargeYen: yenInput(form.get("additionalChargeYen")),
+        memo: textInput(form.get("memo"))
+      });
+      const result = await api.settleMoveOut(input);
+      event.currentTarget.reset();
+      onMessage(`退去精算を登録しました。敷金・保証金の残高は${formatYen(result.depositBalanceYen)}です。`);
+      await reload();
+    } catch (caught) {
+      setError(caught instanceof z.ZodError ? friendlyZodError(caught) : caught instanceof Error ? caught.message : "退去精算を保存できませんでした。");
+    }
+  };
   const balance = deposits.filter((item) => item.status === "有効").reduce((sum, item) => item.transactionType === "預り" || item.transactionType === "修正" ? sum + item.amountYen : sum - item.amountYen, 0);
   return (
     <div className="grid gap-6">
       <div className="card p-5">
         <h2 className="text-xl font-bold">敷金・預り金</h2>
-        <p className="mt-1 text-slate-600">敷金は入居者から預かっているお金です。原則として家賃収入とは分けて管理します。</p>
+        <p className="mt-1 text-slate-600">契約登録時の敷金・保証金は預り金として残高管理し、礼金は返還しない請求として分けて管理します。</p>
         <div className="mt-4 text-3xl font-bold">{formatYen(balance)}</div>
       </div>
       <div className="grid grid-cols-[420px_1fr] gap-6">
+        <form className="card grid gap-4 p-5" onSubmit={(event) => void settleMoveOut(event)}>
+          <h2 className="text-xl font-bold">退去精算を登録する</h2>
+          <p className="text-sm text-slate-600">敷金・保証金から控除、返金、残高超過分の追加請求をまとめて登録します。</p>
+          {error ? <div className="rounded-lg bg-red-50 p-3 font-bold text-red-800">{error}</div> : null}
+          <FormSelect name="contractId" label="契約" options={contracts.map((item) => ({ label: `${item.tenantName} / ${item.propertyName} ${item.roomNumber}`, value: item.id }))} />
+          <FormInput name="moveOutDate" label="退去日" required type="date" defaultValue={todayText()} />
+          <FormInput name="unpaidRentYen" label="未収家賃・日割り差額" placeholder="0" />
+          <FormInput name="restorationFeeYen" label="原状回復費" placeholder="0" />
+          <FormInput name="cleaningFeeYen" label="清掃費" placeholder="0" />
+          <FormInput name="keyReplacementFeeYen" label="鍵交換費" placeholder="0" />
+          <FormInput name="otherDeductionYen" label="その他控除" placeholder="0" />
+          <FormInput name="refundYen" label="返金額" placeholder="0" />
+          <FormInput name="additionalChargeYen" label="追加請求額" placeholder="0" />
+          <FormInput name="memo" label="メモ" placeholder="立会い結果や精算メモ" />
+          <button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />退去精算を保存する</button>
+        </form>
+        <DepositList deposits={deposits} onCancel={(deposit) => void cancel(deposit)} />
+      </div>
+      <div className="grid grid-cols-[420px_1fr] gap-6">
         <form className="card grid gap-4 p-5" onSubmit={(event) => void submit(event)}>
-          <h2 className="text-xl font-bold">取引を登録する</h2>
+          <h2 className="text-xl font-bold">個別取引を登録する</h2>
+          <p className="text-sm text-slate-600">契約登録時の敷金・保証金は自動で作成されます。調整が必要なときだけ使います。</p>
           {error ? <div className="rounded-lg bg-red-50 p-3 font-bold text-red-800">{error}</div> : null}
           <FormSelect name="contractId" label="契約" options={contracts.map((item) => ({ label: `${item.tenantName} / ${item.propertyName} ${item.roomNumber}`, value: item.id }))} />
           <FormInput name="transactedAt" label="取引日" required type="date" />
@@ -1102,7 +1146,14 @@ function DepositPage({ onMessage }: { onMessage: (message: string) => void }) {
           <FormInput name="memo" label="メモ" placeholder="補足" />
           <button className="rounded-lg bg-primary px-5 py-3 font-bold text-white"><Save className="mr-2 inline" size={18} />取引を保存する</button>
         </form>
-        <DepositList deposits={deposits} onCancel={(deposit) => void cancel(deposit)} />
+        <div className="card p-5">
+          <h2 className="text-xl font-bold">入居時の扱い</h2>
+          <div className="mt-4 grid gap-3">
+            <SummaryTile label="敷金・保証金" value="契約登録時に預り金残高へ自動反映" />
+            <SummaryTile label="礼金" value="返還しない一時請求として自動作成" />
+            <SummaryTile label="退去時" value="控除・返金・追加請求を上の精算フォームで登録" />
+          </div>
+        </div>
       </div>
     </div>
   );

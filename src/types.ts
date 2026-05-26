@@ -344,6 +344,7 @@ export interface OwnerLedgerApi {
   listDepositTransactions(): Promise<DepositTransactionRecord[]>;
   createDepositTransaction(input: Omit<DepositTransactionRecord, "id" | "tenantName" | "propertyName" | "roomNumber" | "balanceAfterYen" | "status"> & { status?: string }): Promise<DepositTransactionRecord>;
   cancelDepositTransaction(id: string): Promise<void>;
+  settleMoveOut(input: MoveOutSettlementInput): Promise<{ depositBalanceYen: number; createdTransactions: number; createdSpotCharge: boolean }>;
   listRepairs(): Promise<RepairRecord[]>;
   createRepair(input: Omit<RepairRecord, "id" | "propertyName" | "roomNumber" | "linkedExpenseId">): Promise<RepairRecord>;
   linkRepairExpense(input: { repairId: string; paymentMethod?: string }): Promise<void>;
@@ -357,6 +358,19 @@ export interface OwnerLedgerApi {
 }
 
 export type FontSizePreference = "standard" | "large" | "extra-large";
+
+export interface MoveOutSettlementInput {
+  contractId: string;
+  moveOutDate: string;
+  unpaidRentYen: number;
+  restorationFeeYen: number;
+  cleaningFeeYen: number;
+  keyReplacementFeeYen: number;
+  otherDeductionYen: number;
+  refundYen: number;
+  additionalChargeYen: number;
+  memo?: string;
+}
 
 declare global {
   interface Window {
