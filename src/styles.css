@@ -11,7 +11,10 @@
   --surface: 0 0% 100%;
   --surface-soft: 210 40% 97%;
   --muted: 215 16% 47%;
-  font-family: "Yu Gothic UI", "Meiryo", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Segoe UI Variable", "Segoe UI", "Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", "Yu Gothic UI", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+  --font-number: "Segoe UI Variable", "Segoe UI", "Yu Gothic UI", system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 
 html[data-font-size="large"] {
@@ -32,6 +35,9 @@ body {
     linear-gradient(180deg, #ffffff 0%, #f5f8fb 58%, #eef5f4 100%);
   color: hsl(var(--foreground));
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  font-kerning: normal;
+  font-variant-numeric: tabular-nums;
 }
 
 button,
@@ -39,6 +45,15 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+h1,
+h2,
+h3,
+.brand-title,
+.brand-mark,
+.font-bold {
+  font-family: var(--font-display);
 }
 
 button {
@@ -93,6 +108,7 @@ textarea:focus-visible {
   background: #0f766e;
   color: white;
   font-weight: 900;
+  font-variant-numeric: tabular-nums;
   box-shadow: 0 14px 24px rgb(15 118 110 / 0.22);
 }
 
@@ -100,6 +116,7 @@ textarea:focus-visible {
   font-size: 18px;
   font-weight: 900;
   letter-spacing: 0;
+  line-height: 1.1;
 }
 
 .brand-subtitle {
@@ -127,6 +144,7 @@ textarea:focus-visible {
   text-align: left;
   font-size: 15px;
   font-weight: 800;
+  line-height: 1.2;
 }
 
 .nav-item:hover {
@@ -166,6 +184,7 @@ textarea:focus-visible {
 .topbar h1 {
   color: #172033;
   letter-spacing: 0;
+  line-height: 1.15;
 }
 
 .topbar-actions {
@@ -257,6 +276,7 @@ textarea:focus-visible {
   padding: 11px 12px;
   background: #ffffff;
   color: #162333;
+  font-family: var(--font-sans);
   min-height: 44px;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
@@ -313,6 +333,7 @@ button:disabled {
   padding: 4px 10px;
   font-weight: 800;
   font-size: 13px;
+  line-height: 1.2;
   display: inline-flex;
   width: fit-content;
   align-items: center;
@@ -371,6 +392,7 @@ button:disabled {
 
 .easy-action-title {
   color: #172033;
+  font-family: var(--font-display);
   font-weight: 900;
 }
 
